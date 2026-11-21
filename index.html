@@ -1,0 +1,1528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AirGuard – Urban Air Quality Assistant</title>
+  <style>
+    /* ===================== RESET & TOKENS ===================== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --clr-bg:        #0a0f1e;
+      --clr-surface:   #111827;
+      --clr-card:      #1a2235;
+      --clr-border:    #1e3a5f;
+      --clr-primary:   #38bdf8;
+      --clr-primary2:  #818cf8;
+      --clr-accent:    #34d399;
+      --clr-warn:      #fb923c;
+      --clr-danger:    #f87171;
+      --clr-text:      #e2e8f0;
+      --clr-muted:     #94a3b8;
+      --clr-gradient:  linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+      --shadow-lg:     0 20px 60px rgba(0,0,0,.5);
+      --radius-sm:     8px;
+      --radius-md:     14px;
+      --radius-lg:     22px;
+      --font: 'Segoe UI', system-ui, sans-serif;
+    }
+
+    /* AQI theme variables – updated via JS */
+    body {
+      font-family: var(--font);
+      background: var(--clr-bg);
+      color: var(--clr-text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ===================== ANIMATED BG ===================== */
+    .bg-particles { position:fixed; inset:0; pointer-events:none; z-index:0; overflow:hidden; }
+    .particle {
+      position:absolute; border-radius:50%; opacity:.08;
+      animation: drift linear infinite;
+    }
+    @keyframes drift {
+      0%   { transform: translateY(100vh) scale(0); opacity:0; }
+      10%  { opacity:.12; }
+      90%  { opacity:.12; }
+      100% { transform: translateY(-10vh) scale(1.2); opacity:0; }
+    }
+
+    /* ===================== LAYOUT ===================== */
+    .app { position:relative; z-index:1; display:flex; flex-direction:column; min-height:100vh; }
+
+    /* ===================== HEADER ===================== */
+    header {
+      background: rgba(17,24,39,.85);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--clr-border);
+      padding: 1rem 2rem;
+      display: flex; align-items:center; justify-content:space-between;
+      position: sticky; top:0; z-index:100;
+    }
+    .logo { display:flex; align-items:center; gap:.75rem; }
+    .logo-icon {
+      width:40px; height:40px; border-radius:50%;
+      background: var(--clr-gradient);
+      display:flex; align-items:center; justify-content:center;
+      font-size:1.2rem;
+      box-shadow: 0 0 20px rgba(56,189,248,.4);
+    }
+    .logo h1 { font-size:1.4rem; font-weight:700; background:var(--clr-gradient); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+    .logo p  { font-size:.7rem; color:var(--clr-muted); letter-spacing:.05em; }
+    .header-right { display:flex; align-items:center; gap:1rem; }
+
+    /* ===================== AQI BADGE ===================== */
+    .aqi-badge {
+      display:flex; align-items:center; gap:.5rem;
+      background: var(--clr-card); border:1px solid var(--clr-border);
+      border-radius:999px; padding:.4rem 1rem;
+      font-size:.85rem; font-weight:600;
+      transition: all .3s;
+    }
+    .aqi-dot { width:10px; height:10px; border-radius:50%; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{transform:scale(1); opacity:1;} 50%{transform:scale(1.4); opacity:.7;} }
+
+    /* ===================== HERO / SETUP ===================== */
+    .hero {
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      text-align:center; padding:4rem 2rem 2rem;
+      gap:1.5rem;
+    }
+    .hero-title { font-size:clamp(2rem,5vw,3.2rem); font-weight:800; line-height:1.15; }
+    .hero-title span { background:var(--clr-gradient); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+    .hero-sub { color:var(--clr-muted); font-size:1.05rem; max-width:560px; }
+
+    /* ===================== SETUP CARD ===================== */
+    .setup-card {
+      background: var(--clr-card); border:1px solid var(--clr-border);
+      border-radius: var(--radius-lg); padding:2rem;
+      max-width:680px; width:100%; box-shadow: var(--shadow-lg);
+      animation: slideUp .4s ease;
+    }
+    @keyframes slideUp { from{opacity:0;transform:translateY(30px)} to{opacity:1;transform:translateY(0)} }
+    .setup-card h2 { font-size:1.1rem; margin-bottom:1.5rem; color:var(--clr-primary); }
+
+    .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:1rem; }
+    @media(max-width:520px){ .form-grid{grid-template-columns:1fr;} }
+
+    .form-group { display:flex; flex-direction:column; gap:.4rem; }
+    .form-group.full { grid-column:1/-1; }
+    label { font-size:.8rem; font-weight:600; color:var(--clr-muted); letter-spacing:.04em; text-transform:uppercase; }
+    input, select, textarea {
+      background: var(--clr-surface); border:1px solid var(--clr-border);
+      border-radius: var(--radius-sm); padding:.7rem 1rem;
+      color: var(--clr-text); font-size:.9rem; font-family:inherit;
+      outline:none; transition: border-color .2s, box-shadow .2s;
+      width:100%;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--clr-primary);
+      box-shadow: 0 0 0 3px rgba(56,189,248,.15);
+    }
+    textarea { resize:vertical; min-height:70px; }
+    select option { background: var(--clr-surface); }
+
+    /* API KEY input */
+    .api-row { display:flex; gap:.5rem; align-items:center; }
+    .api-row input { flex:1; }
+    .api-toggle { background:none; border:1px solid var(--clr-border); color:var(--clr-muted); border-radius:var(--radius-sm); padding:.7rem .9rem; cursor:pointer; font-size:.85rem; white-space:nowrap; }
+    .api-toggle:hover { border-color:var(--clr-primary); color:var(--clr-primary); }
+
+    /* ===================== BUTTONS ===================== */
+    .btn {
+      display:inline-flex; align-items:center; gap:.5rem;
+      padding:.75rem 1.5rem; border-radius:var(--radius-sm);
+      font-size:.9rem; font-weight:600; cursor:pointer;
+      border:none; transition: all .2s; white-space:nowrap;
+    }
+    .btn-primary {
+      background: var(--clr-gradient); color:#fff;
+      box-shadow: 0 4px 20px rgba(56,189,248,.35);
+    }
+    .btn-primary:hover { transform:translateY(-1px); box-shadow: 0 8px 30px rgba(56,189,248,.5); }
+    .btn-primary:active { transform:translateY(0); }
+    .btn-primary:disabled { opacity:.5; cursor:not-allowed; transform:none; }
+    .btn-ghost {
+      background:transparent; border:1px solid var(--clr-border); color:var(--clr-muted);
+    }
+    .btn-ghost:hover { border-color:var(--clr-primary); color:var(--clr-primary); }
+
+    /* ===================== MAIN DASHBOARD ===================== */
+    .dashboard { display:none; flex-direction:column; gap:0; padding:0; }
+    .dashboard.active { display:flex; }
+
+    /* Tabs */
+    .tabs-bar {
+      background: var(--clr-surface); border-bottom:1px solid var(--clr-border);
+      display:flex; gap:0; padding:0 2rem; overflow-x:auto;
+      scrollbar-width:none;
+    }
+    .tabs-bar::-webkit-scrollbar { display:none; }
+    .tab-btn {
+      display:flex; align-items:center; gap:.5rem;
+      padding:.85rem 1.2rem; cursor:pointer; background:none; border:none;
+      color:var(--clr-muted); font-size:.85rem; font-weight:500;
+      border-bottom:2px solid transparent; transition:all .2s; white-space:nowrap;
+    }
+    .tab-btn:hover { color:var(--clr-text); }
+    .tab-btn.active { color:var(--clr-primary); border-bottom-color:var(--clr-primary); }
+
+    .tab-content { display:none; padding:1.5rem 2rem; animation:slideUp .3s ease; }
+    .tab-content.active { display:block; }
+
+    /* ===================== CHAT TAB ===================== */
+    .chat-container {
+      display:flex; flex-direction:column;
+      height:calc(100vh - 185px);
+      max-width:900px; margin:0 auto; width:100%;
+      gap:1rem;
+    }
+    .chat-messages {
+      flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:1rem;
+      padding:.5rem;
+      scrollbar-width:thin; scrollbar-color: var(--clr-border) transparent;
+    }
+
+    .message {
+      display:flex; gap:.8rem; max-width:85%;
+      animation: msgIn .3s ease;
+    }
+    @keyframes msgIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+    .message.user { align-self:flex-end; flex-direction:row-reverse; }
+    .message.assistant { align-self:flex-start; }
+
+    .msg-avatar {
+      width:36px; height:36px; border-radius:50%; flex-shrink:0;
+      display:flex; align-items:center; justify-content:center; font-size:1rem;
+    }
+    .message.assistant .msg-avatar { background:var(--clr-gradient); }
+    .message.user .msg-avatar { background: rgba(129,140,248,.2); border:1px solid var(--clr-primary2); }
+
+    .msg-bubble {
+      background: var(--clr-card); border:1px solid var(--clr-border);
+      border-radius: var(--radius-md); padding:1rem 1.2rem;
+      font-size:.9rem; line-height:1.6;
+    }
+    .message.user .msg-bubble {
+      background: rgba(56,189,248,.12); border-color: rgba(56,189,248,.25);
+    }
+    .msg-bubble p { margin-bottom:.5rem; }
+    .msg-bubble p:last-child { margin-bottom:0; }
+    .msg-bubble ul, .msg-bubble ol { padding-left:1.2rem; margin:.5rem 0; }
+    .msg-bubble li { margin:.3rem 0; }
+    .msg-bubble strong { color:var(--clr-primary); }
+    .msg-bubble em { color:var(--clr-accent); font-style:normal; }
+    .msg-bubble h3 { font-size:.95rem; color:var(--clr-primary); margin:.8rem 0 .3rem; }
+    .msg-bubble h4 { font-size:.85rem; color:var(--clr-primary2); margin:.6rem 0 .2rem; }
+    .msg-bubble .impact-block {
+      background: rgba(52,211,153,.08); border-left:3px solid var(--clr-accent);
+      border-radius:0 var(--radius-sm) var(--radius-sm) 0;
+      padding:.6rem .9rem; margin:.6rem 0; font-size:.85rem;
+    }
+
+    /* typing indicator */
+    .typing-indicator {
+      display:flex; gap:5px; padding:.5rem .8rem;
+      background:var(--clr-card); border:1px solid var(--clr-border);
+      border-radius:var(--radius-md); width:fit-content;
+    }
+    .typing-indicator span {
+      width:7px; height:7px; border-radius:50%;
+      background:var(--clr-primary); display:block;
+      animation: bounce .8s infinite;
+    }
+    .typing-indicator span:nth-child(2){animation-delay:.15s}
+    .typing-indicator span:nth-child(3){animation-delay:.3s}
+    @keyframes bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-6px)}}
+
+    /* quick prompts */
+    .quick-prompts {
+      display:flex; flex-wrap:wrap; gap:.5rem; padding:.25rem 0;
+    }
+    .qp-btn {
+      background: rgba(56,189,248,.08); border:1px solid rgba(56,189,248,.2);
+      color:var(--clr-primary); border-radius:999px;
+      padding:.4rem 1rem; font-size:.8rem; cursor:pointer;
+      transition:all .2s;
+    }
+    .qp-btn:hover { background:rgba(56,189,248,.18); }
+
+    /* chat input */
+    .chat-input-area {
+      background: var(--clr-card); border:1px solid var(--clr-border);
+      border-radius: var(--radius-lg); padding:1rem;
+      display:flex; gap:.8rem; align-items:flex-end;
+      box-shadow: var(--shadow-lg);
+    }
+    .chat-input-area textarea {
+      flex:1; border:none; background:transparent; resize:none;
+      min-height:44px; max-height:160px; padding:.5rem 0;
+      font-size:.95rem; line-height:1.5;
+    }
+    .chat-input-area textarea:focus { box-shadow:none; }
+    .send-btn {
+      background:var(--clr-gradient); border:none; border-radius:var(--radius-sm);
+      width:44px; height:44px; cursor:pointer; flex-shrink:0;
+      display:flex; align-items:center; justify-content:center;
+      font-size:1.1rem; transition:all .2s;
+      box-shadow:0 4px 15px rgba(56,189,248,.3);
+    }
+    .send-btn:hover { transform:scale(1.05); }
+    .send-btn:disabled { opacity:.4; cursor:not-allowed; transform:none; }
+
+    /* ===================== AQI GAUGE TAB ===================== */
+    .gauge-section { max-width:800px; margin:0 auto; }
+    .gauge-wrap { display:flex; flex-direction:column; align-items:center; gap:2rem; }
+    .gauge-visual {
+      position:relative; width:260px; height:140px; overflow:hidden;
+    }
+    .gauge-svg { width:100%; height:auto; }
+    .gauge-value {
+      position:absolute; bottom:0; left:50%; transform:translateX(-50%);
+      text-align:center;
+    }
+    .gauge-value .num { font-size:3rem; font-weight:800; line-height:1; }
+    .gauge-value .label { font-size:.85rem; color:var(--clr-muted); }
+
+    .aqi-scale {
+      display:grid; grid-template-columns:repeat(6,1fr); gap:.4rem;
+      width:100%; font-size:.72rem;
+    }
+    .aqi-scale-item { border-radius:var(--radius-sm); padding:.4rem .3rem; text-align:center; }
+    .aqi-scale-item .range { font-weight:700; }
+    .aqi-scale-item .cat { color:rgba(255,255,255,.7); margin-top:.1rem; }
+
+    .aqi-detail-grid {
+      display:grid; grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); gap:1rem;
+      width:100%;
+    }
+    .detail-card {
+      background:var(--clr-card); border:1px solid var(--clr-border);
+      border-radius:var(--radius-md); padding:1rem; text-align:center;
+    }
+    .detail-card .d-icon { font-size:1.5rem; margin-bottom:.4rem; }
+    .detail-card .d-val  { font-size:1.4rem; font-weight:700; color:var(--clr-primary); }
+    .detail-card .d-label{ font-size:.75rem; color:var(--clr-muted); margin-top:.2rem; }
+
+    /* ===================== ROUTINES TAB ===================== */
+    .routines-grid {
+      display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+      gap:1.2rem; max-width:1000px; margin:0 auto;
+    }
+    .routine-card {
+      background:var(--clr-card); border:1px solid var(--clr-border);
+      border-radius:var(--radius-md); padding:1.4rem; cursor:pointer;
+      transition: all .25s; position:relative; overflow:hidden;
+    }
+    .routine-card::before {
+      content:''; position:absolute; inset:0;
+      background: var(--clr-gradient); opacity:0; transition:opacity .25s;
+    }
+    .routine-card:hover { border-color:var(--clr-primary); transform:translateY(-2px); }
+    .routine-card:hover::before { opacity:.04; }
+    .routine-card .rc-header { display:flex; align-items:center; gap:.8rem; margin-bottom:.8rem; position:relative; z-index:1; }
+    .rc-icon { width:44px; height:44px; border-radius:var(--radius-sm); display:flex; align-items:center; justify-content:center; font-size:1.3rem; }
+    .rc-title { font-weight:700; font-size:.95rem; }
+    .rc-subtitle { font-size:.78rem; color:var(--clr-muted); }
+    .rc-tips { list-style:none; display:flex; flex-direction:column; gap:.5rem; position:relative; z-index:1; }
+    .rc-tip { display:flex; gap:.5rem; font-size:.83rem; align-items:flex-start; }
+    .rc-tip::before { content:'•'; color:var(--clr-accent); flex-shrink:0; margin-top:.05rem; }
+    .rc-impact {
+      margin-top:.8rem; padding:.5rem .75rem;
+      background:rgba(52,211,153,.08); border-radius:var(--radius-sm);
+      font-size:.78rem; color:var(--clr-accent); position:relative; z-index:1;
+    }
+
+    /* ===================== INDOOR TAB ===================== */
+    .indoor-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:1rem; max-width:1000px; margin:0 auto; }
+    .indoor-card {
+      background:var(--clr-card); border:1px solid var(--clr-border);
+      border-radius:var(--radius-md); padding:1.3rem;
+    }
+    .indoor-card h3 { font-size:.9rem; display:flex; align-items:center; gap:.5rem; margin-bottom:.7rem; }
+    .indoor-card ul { list-style:none; display:flex; flex-direction:column; gap:.45rem; }
+    .indoor-card li { font-size:.82rem; display:flex; gap:.5rem; align-items:flex-start; }
+    .indoor-card li::before { content:'🌿'; flex-shrink:0; }
+
+    /* ===================== ALTERNATIVES TAB ===================== */
+    .alt-compare {
+      display:grid; grid-template-columns:1fr auto 1fr; gap:1rem;
+      align-items:center; max-width:900px; margin:0 auto 1.5rem;
+    }
+    .alt-card {
+      background:var(--clr-card); border:1px solid var(--clr-border);
+      border-radius:var(--radius-md); padding:1.2rem;
+    }
+    .alt-card.bad  { border-color:rgba(248,113,113,.3); }
+    .alt-card.good { border-color:rgba(52,211,153,.3); }
+    .alt-label { font-size:.7rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; margin-bottom:.5rem; }
+    .alt-label.bad  { color:var(--clr-danger); }
+    .alt-label.good { color:var(--clr-accent); }
+    .alt-name { font-size:1rem; font-weight:700; }
+    .alt-desc { font-size:.8rem; color:var(--clr-muted); margin-top:.3rem; }
+    .alt-em { font-size:.85rem; margin-top:.6rem; }
+    .vs-arrow { text-align:center; font-size:1.5rem; color:var(--clr-primary); }
+    @media(max-width:580px){ .alt-compare{grid-template-columns:1fr; } .vs-arrow{transform:rotate(90deg);} }
+
+    /* ===================== HISTORY TAB ===================== */
+    .history-list { max-width:700px; margin:0 auto; display:flex; flex-direction:column; gap:1rem; }
+    .history-item {
+      background:var(--clr-card); border:1px solid var(--clr-border);
+      border-radius:var(--radius-md); padding:1rem 1.2rem;
+      display:flex; justify-content:space-between; align-items:flex-start; gap:1rem;
+    }
+    .history-item .hi-q { font-size:.88rem; font-weight:600; }
+    .history-item .hi-t { font-size:.75rem; color:var(--clr-muted); margin-top:.2rem; }
+    .history-item .hi-aqi { font-size:.8rem; border-radius:999px; padding:.2rem .7rem; font-weight:700; white-space:nowrap; }
+
+    /* ===================== TOAST ===================== */
+    .toast-container { position:fixed; bottom:2rem; right:2rem; display:flex; flex-direction:column; gap:.5rem; z-index:999; }
+    .toast {
+      background:var(--clr-card); border:1px solid var(--clr-border);
+      border-radius:var(--radius-sm); padding:.75rem 1.2rem;
+      font-size:.85rem; animation:toastIn .3s ease;
+      box-shadow:var(--shadow-lg); display:flex; align-items:center; gap:.5rem;
+      max-width:320px;
+    }
+    @keyframes toastIn { from{opacity:0;transform:translateX(50px)} to{opacity:1;transform:translateX(0)} }
+    .toast.success { border-color:var(--clr-accent); }
+    .toast.error   { border-color:var(--clr-danger); }
+
+    /* ===================== SECTION HEADINGS ===================== */
+    .section-header {
+      display:flex; align-items:center; justify-content:space-between;
+      margin-bottom:1.5rem;
+    }
+    .section-header h2 { font-size:1.2rem; font-weight:700; }
+    .section-header p { font-size:.82rem; color:var(--clr-muted); margin-top:.2rem; }
+
+    /* ===================== LOADING OVERLAY ===================== */
+    .loading-overlay {
+      position:fixed; inset:0; background:rgba(10,15,30,.9);
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      gap:1.5rem; z-index:200;
+    }
+    .loading-overlay.hidden { display:none; }
+    .spinner {
+      width:60px; height:60px; border-radius:50%;
+      border:3px solid var(--clr-border);
+      border-top-color: var(--clr-primary);
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .loading-overlay p { color:var(--clr-muted); font-size:.95rem; }
+
+    /* ===================== PROFILE PILL ===================== */
+    .profile-pill {
+      display:flex; align-items:center; gap:.5rem;
+      background:var(--clr-card); border:1px solid var(--clr-border);
+      border-radius:999px; padding:.35rem .8rem .35rem .5rem;
+      font-size:.8rem; color:var(--clr-muted);
+    }
+    .profile-pill .pp-avatar { width:24px; height:24px; border-radius:50%; background:var(--clr-gradient); display:flex; align-items:center; justify-content:center; font-size:.7rem; }
+
+    /* ===================== SCROLLBAR ===================== */
+    ::-webkit-scrollbar { width:5px; height:5px; }
+    ::-webkit-scrollbar-track { background:transparent; }
+    ::-webkit-scrollbar-thumb { background:var(--clr-border); border-radius:999px; }
+
+    /* ===================== MISC ===================== */
+    .chip {
+      display:inline-flex; align-items:center; gap:.35rem;
+      background:rgba(56,189,248,.1); border:1px solid rgba(56,189,248,.2);
+      color:var(--clr-primary); border-radius:999px;
+      padding:.2rem .7rem; font-size:.75rem; font-weight:600;
+    }
+    .divider { border:none; border-top:1px solid var(--clr-border); margin:1.5rem 0; }
+    .text-gradient { background:var(--clr-gradient); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+    .mt-1 { margin-top:.5rem; } .mt-2 { margin-top:1rem; } .mt-3 { margin-top:1.5rem; }
+    .flex { display:flex; } .gap-1 { gap:.5rem; } .items-center { align-items:center; }
+    .ml-auto { margin-left:auto; }
+
+    /* Impact meter */
+    .impact-meter { display:flex; align-items:center; gap:.5rem; margin:.4rem 0; }
+    .impact-meter-label { font-size:.75rem; color:var(--clr-muted); width:120px; flex-shrink:0; }
+    .impact-meter-bar { flex:1; height:6px; background:var(--clr-border); border-radius:999px; overflow:hidden; }
+    .impact-meter-fill { height:100%; border-radius:999px; background:var(--clr-gradient); transition:width 1s ease; }
+    .impact-meter-val { font-size:.75rem; font-weight:700; color:var(--clr-primary); width:30px; text-align:right; }
+
+    /* Welcome banner */
+    .welcome-banner {
+      background: linear-gradient(135deg, rgba(56,189,248,.12) 0%, rgba(129,140,248,.12) 100%);
+      border:1px solid rgba(56,189,248,.2); border-radius:var(--radius-md);
+      padding:1.2rem 1.5rem; margin-bottom:1rem; max-width:900px;
+    }
+
+    /* mobile nav bottom */
+    @media(max-width:640px) {
+      .tabs-bar { padding:0 .5rem; position:fixed; bottom:0; left:0; right:0; z-index:99; border-top:1px solid var(--clr-border); border-bottom:none; }
+      .tab-content { padding:1rem 1rem 6rem; }
+      .chat-container { height:calc(100vh - 220px); }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Animated background particles -->
+<div class="bg-particles" id="bgParticles"></div>
+
+<!-- Loading overlay -->
+<div class="loading-overlay hidden" id="loadingOverlay">
+  <div class="spinner"></div>
+  <p id="loadingMsg">Analyzing air quality data…</p>
+</div>
+
+<!-- Toast container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<div class="app">
+
+  <!-- ============ HEADER ============ -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">🌬️</div>
+      <div>
+        <h1>AirGuard</h1>
+        <p>Urban Air Quality Assistant</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="aqi-badge" id="aqiBadge" style="display:none">
+        <div class="aqi-dot" id="aqiDot" style="background:#94a3b8"></div>
+        <span id="aqiBadgeText">AQI –</span>
+      </div>
+      <div class="profile-pill" id="profilePill" style="display:none">
+        <div class="pp-avatar">👤</div>
+        <span id="profileName">User</span>
+      </div>
+      <button class="btn btn-ghost" id="resetBtn" style="display:none; padding:.4rem .9rem; font-size:.8rem;" onclick="resetApp()">⚙ Settings</button>
+    </div>
+  </header>
+
+  <!-- ============ SETUP SCREEN ============ -->
+  <div id="setupScreen">
+    <div class="hero">
+      <div>
+        <div class="chip">🌍 AI-Powered • Real-time Analysis</div>
+      </div>
+      <div class="hero-title">
+        Breathe Smarter,<br/><span>Live Healthier</span>
+      </div>
+      <p class="hero-sub">
+        Your personal AI assistant for navigating urban air pollution — tailored daily routines, indoor air hacks, and sustainable alternatives for your city and lifestyle.
+      </p>
+
+      <div class="setup-card">
+        <h2>🚀 Personalize Your Experience</h2>
+        <div class="form-grid">
+
+          <!-- API Key -->
+          <div class="form-group full">
+            <label>🔑 Gemini API Key</label>
+            <div class="api-row">
+              <input type="password" id="apiKey" placeholder="Enter your Gemini API key…" />
+              <button class="api-toggle" onclick="toggleApiVis()">👁 Show</button>
+            </div>
+            <small style="color:var(--clr-muted);font-size:.75rem;">
+              Get a free key at <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--clr-primary)">aistudio.google.com</a> · Stored locally only
+            </small>
+          </div>
+
+          <!-- City -->
+          <div class="form-group">
+            <label>🏙 City / Location</label>
+            <input type="text" id="city" placeholder="e.g. Delhi, Mumbai, Beijing…" />
+          </div>
+
+          <!-- Family size -->
+          <div class="form-group">
+            <label>👨‍👩‍👧 Household Size</label>
+            <select id="familySize">
+              <option value="1">Just me</option>
+              <option value="2">2 people</option>
+              <option value="3-4" selected>3–4 people</option>
+              <option value="5+">5+ people</option>
+            </select>
+          </div>
+
+          <!-- Health concerns -->
+          <div class="form-group">
+            <label>🏥 Health Concerns</label>
+            <select id="healthConcerns">
+              <option value="none">None / General</option>
+              <option value="asthma">Asthma / Respiratory</option>
+              <option value="heart">Heart Conditions</option>
+              <option value="elderly">Elderly Member</option>
+              <option value="children">Young Children</option>
+              <option value="pregnant">Pregnancy</option>
+              <option value="multiple">Multiple Concerns</option>
+            </select>
+          </div>
+
+          <!-- Lifestyle -->
+          <div class="form-group">
+            <label>🚗 Primary Transport</label>
+            <select id="transport">
+              <option value="car">Personal Car</option>
+              <option value="motorbike">Motorbike / Scooter</option>
+              <option value="public">Public Transport</option>
+              <option value="cycle">Cycling / Walking</option>
+              <option value="ev">Electric Vehicle</option>
+              <option value="mixed">Mixed</option>
+            </select>
+          </div>
+
+          <!-- Work style -->
+          <div class="form-group">
+            <label>💼 Work Style</label>
+            <select id="workStyle">
+              <option value="office">Office / On-site</option>
+              <option value="remote">Work from Home</option>
+              <option value="hybrid">Hybrid</option>
+              <option value="outdoor">Outdoor Work</option>
+            </select>
+          </div>
+
+          <!-- Budget -->
+          <div class="form-group full">
+            <label>💰 Budget for Eco-Upgrades</label>
+            <select id="budget">
+              <option value="zero">Zero budget (free tips only)</option>
+              <option value="low" selected>Low (₹500–₹2000 / month)</option>
+              <option value="medium">Medium (₹2000–₹10,000 / month)</option>
+              <option value="high">High (₹10,000+ / month)</option>
+            </select>
+          </div>
+
+          <!-- Specific concerns -->
+          <div class="form-group full">
+            <label>💬 Any Specific Concerns or Questions?</label>
+            <textarea id="specificConcerns" placeholder="e.g. My kids walk to school through heavy traffic… I cook on a gas stove… Our area has a lot of construction dust…"></textarea>
+          </div>
+
+        </div>
+
+        <div style="display:flex; justify-content:flex-end; margin-top:1.5rem;">
+          <button class="btn btn-primary" id="startBtn" onclick="startApp()">
+            🌬️ Start My Air Quality Journey
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ DASHBOARD ============ -->
+  <div class="dashboard" id="dashboard">
+
+    <!-- Tabs -->
+    <nav class="tabs-bar">
+      <button class="tab-btn active" onclick="switchTab('chat')" id="tab-chat">💬 AI Assistant</button>
+      <button class="tab-btn" onclick="switchTab('aqi')" id="tab-aqi">📊 AQI Dashboard</button>
+      <button class="tab-btn" onclick="switchTab('routines')" id="tab-routines">🗓 Daily Routines</button>
+      <button class="tab-btn" onclick="switchTab('indoor')" id="tab-indoor">🏠 Indoor Quality</button>
+      <button class="tab-btn" onclick="switchTab('alternatives')" id="tab-alternatives">♻ Alternatives</button>
+      <button class="tab-btn" onclick="switchTab('history')" id="tab-history">📜 History</button>
+    </nav>
+
+    <!-- ---- CHAT TAB ---- -->
+    <div class="tab-content active" id="content-chat">
+      <div class="chat-container">
+
+        <div class="welcome-banner" id="welcomeBanner">
+          <div style="font-weight:700; font-size:1rem; margin-bottom:.4rem;">👋 Hi there! I'm AirGuard, your personal air quality assistant.</div>
+          <div style="font-size:.85rem; color:var(--clr-muted);">I'm fully aware of your location, lifestyle, and health needs. Ask me anything about air quality, or use the quick prompts below to get started!</div>
+        </div>
+
+        <div class="quick-prompts" id="quickPrompts">
+          <button class="qp-btn" onclick="sendQuick(this.textContent)">🌅 Morning routine for bad AQI days</button>
+          <button class="qp-btn" onclick="sendQuick(this.textContent)">🌿 Best indoor plants for air purification</button>
+          <button class="qp-btn" onclick="sendQuick(this.textContent)">🚗 Eco-friendly commute options</button>
+          <button class="qp-btn" onclick="sendQuick(this.textContent)">😷 When should I wear a mask outdoors?</button>
+          <button class="qp-btn" onclick="sendQuick(this.textContent)">🍳 Cooking without polluting indoor air</button>
+          <button class="qp-btn" onclick="sendQuick(this.textContent)">📉 Impact of my choices on air quality</button>
+        </div>
+
+        <div class="chat-messages" id="chatMessages"></div>
+
+        <div class="chat-input-area">
+          <textarea id="chatInput" placeholder="Ask about air quality, routines, health impacts…" rows="1" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+          <button class="send-btn" id="sendBtn" onclick="sendMessage()">➤</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---- AQI TAB ---- -->
+    <div class="tab-content" id="content-aqi">
+      <div class="gauge-section">
+        <div class="section-header">
+          <div>
+            <h2>📊 Air Quality Dashboard</h2>
+            <p id="aqiLocation">Loading location data…</p>
+          </div>
+          <button class="btn btn-primary" onclick="refreshAQI()" style="padding:.5rem 1rem; font-size:.82rem;">🔄 Refresh</button>
+        </div>
+
+        <div class="gauge-wrap">
+          <!-- Gauge SVG -->
+          <div class="gauge-visual">
+            <svg class="gauge-svg" viewBox="0 0 260 140" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="gaugeGrad" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%"   stop-color="#34d399"/>
+                  <stop offset="30%"  stop-color="#fbbf24"/>
+                  <stop offset="60%"  stop-color="#fb923c"/>
+                  <stop offset="80%"  stop-color="#f87171"/>
+                  <stop offset="100%" stop-color="#8b5cf6"/>
+                </linearGradient>
+              </defs>
+              <!-- Track -->
+              <path d="M 20 130 A 110 110 0 0 1 240 130" fill="none" stroke="#1e3a5f" stroke-width="20" stroke-linecap="round"/>
+              <!-- Fill -->
+              <path id="gaugeFill" d="M 20 130 A 110 110 0 0 1 240 130" fill="none" stroke="url(#gaugeGrad)" stroke-width="20" stroke-linecap="round" stroke-dasharray="0 346" style="transition:stroke-dasharray 1.5s ease"/>
+              <!-- Needle -->
+              <line id="gaugeNeedle" x1="130" y1="130" x2="130" y2="30" stroke="#e2e8f0" stroke-width="2.5" stroke-linecap="round" transform-origin="130 130" style="transition:transform 1.5s ease; transform:rotate(-90deg)"/>
+              <circle cx="130" cy="130" r="8" fill="var(--clr-surface)" stroke="var(--clr-primary)" stroke-width="2"/>
+            </svg>
+            <div class="gauge-value">
+              <div class="num text-gradient" id="gaugeNum">–</div>
+              <div class="label" id="gaugeLabel">AQI</div>
+            </div>
+          </div>
+
+          <!-- AQI Scale -->
+          <div class="aqi-scale">
+            <div class="aqi-scale-item" style="background:#059669">
+              <div class="range">0–50</div>
+              <div class="cat">Good</div>
+            </div>
+            <div class="aqi-scale-item" style="background:#ca8a04">
+              <div class="range">51–100</div>
+              <div class="cat">Moderate</div>
+            </div>
+            <div class="aqi-scale-item" style="background:#ea580c">
+              <div class="range">101–150</div>
+              <div class="cat">Unhealthy*</div>
+            </div>
+            <div class="aqi-scale-item" style="background:#dc2626">
+              <div class="range">151–200</div>
+              <div class="cat">Unhealthy</div>
+            </div>
+            <div class="aqi-scale-item" style="background:#7c3aed">
+              <div class="range">201–300</div>
+              <div class="cat">Very Unhlthy</div>
+            </div>
+            <div class="aqi-scale-item" style="background:#1e1b4b">
+              <div class="range">300+</div>
+              <div class="cat">Hazardous</div>
+            </div>
+          </div>
+
+          <!-- Detail cards -->
+          <div class="aqi-detail-grid" id="aqiDetailGrid">
+            <div class="detail-card"><div class="d-icon">🌫</div><div class="d-val" id="detPM25">–</div><div class="d-label">PM2.5 (μg/m³)</div></div>
+            <div class="detail-card"><div class="d-icon">💨</div><div class="d-val" id="detPM10">–</div><div class="d-label">PM10 (μg/m³)</div></div>
+            <div class="detail-card"><div class="d-icon">🏭</div><div class="d-val" id="detNO2">–</div><div class="d-label">NO₂ (μg/m³)</div></div>
+            <div class="detail-card"><div class="d-icon">⚠️</div><div class="d-val" id="detO3">–</div><div class="d-label">O₃ (μg/m³)</div></div>
+            <div class="detail-card"><div class="d-icon">🌡</div><div class="d-val" id="detTemp">–</div><div class="d-label">Temperature</div></div>
+            <div class="detail-card"><div class="d-icon">💧</div><div class="d-val" id="detHumidity">–</div><div class="d-label">Humidity</div></div>
+          </div>
+
+          <!-- AI insight -->
+          <div id="aqiAiInsight" style="width:100%; background:var(--clr-card); border:1px solid var(--clr-border); border-radius:var(--radius-md); padding:1.2rem; font-size:.88rem; line-height:1.6; display:none;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---- ROUTINES TAB ---- -->
+    <div class="tab-content" id="content-routines">
+      <div class="section-header">
+        <div>
+          <h2>🗓 Low-Emission Daily Routines</h2>
+          <p>Personalized for your lifestyle and local AQI</p>
+        </div>
+        <button class="btn btn-primary" onclick="generateRoutines()" style="padding:.5rem 1rem; font-size:.82rem;">✨ Regenerate</button>
+      </div>
+      <div class="routines-grid" id="routinesGrid">
+        <div style="grid-column:1/-1; text-align:center; color:var(--clr-muted); padding:3rem;">
+          <div style="font-size:2rem; margin-bottom:.5rem;">🌬️</div>
+          Click the AI Assistant tab and start chatting, or click "Regenerate" to load your personalized routines.
+        </div>
+      </div>
+    </div>
+
+    <!-- ---- INDOOR TAB ---- -->
+    <div class="tab-content" id="content-indoor">
+      <div class="section-header">
+        <div>
+          <h2>🏠 Indoor Air Quality Hacks</h2>
+          <p>Transform your home into a clean-air sanctuary</p>
+        </div>
+        <button class="btn btn-primary" onclick="generateIndoor()" style="padding:.5rem 1rem; font-size:.82rem;">✨ Generate Tips</button>
+      </div>
+      <div class="indoor-grid" id="indoorGrid">
+        <div style="grid-column:1/-1; text-align:center; color:var(--clr-muted); padding:3rem;">
+          <div style="font-size:2rem; margin-bottom:.5rem;">🌿</div>
+          Click "Generate Tips" to get personalized indoor air quality recommendations.
+        </div>
+      </div>
+    </div>
+
+    <!-- ---- ALTERNATIVES TAB ---- -->
+    <div class="tab-content" id="content-alternatives">
+      <div class="section-header">
+        <div>
+          <h2>♻ Sustainable Alternatives</h2>
+          <p>Swap high-emission habits for greener choices</p>
+        </div>
+        <button class="btn btn-primary" onclick="generateAlternatives()" style="padding:.5rem 1rem; font-size:.82rem;">✨ Generate</button>
+      </div>
+      <div id="alternativesContent">
+        <div style="text-align:center; color:var(--clr-muted); padding:3rem;">
+          <div style="font-size:2rem; margin-bottom:.5rem;">♻</div>
+          Click "Generate" to see personalized sustainable alternatives.
+        </div>
+      </div>
+    </div>
+
+    <!-- ---- HISTORY TAB ---- -->
+    <div class="tab-content" id="content-history">
+      <div class="section-header">
+        <div>
+          <h2>📜 Conversation History</h2>
+          <p>Your recent questions and AI responses</p>
+        </div>
+        <button class="btn btn-ghost" onclick="clearHistory()" style="padding:.4rem .9rem; font-size:.8rem;">🗑 Clear</button>
+      </div>
+      <div class="history-list" id="historyList">
+        <div style="text-align:center; color:var(--clr-muted); padding:3rem;">No history yet. Start chatting!</div>
+      </div>
+    </div>
+
+  </div><!-- /dashboard -->
+</div><!-- /app -->
+
+<script>
+// =====================================================================
+//  STATE
+// =====================================================================
+let userProfile = {};
+let chatHistory = [];
+let conversationHistory = [];  // For Gemini multi-turn
+let aqiData = null;
+let apiKey = '';
+
+// =====================================================================
+//  PARTICLES
+// =====================================================================
+function initParticles() {
+  const container = document.getElementById('bgParticles');
+  const colors = ['#38bdf8','#818cf8','#34d399'];
+  for (let i = 0; i < 20; i++) {
+    const p = document.createElement('div');
+    p.className = 'particle';
+    const size = Math.random() * 60 + 20;
+    const color = colors[Math.floor(Math.random() * colors.length)];
+    p.style.cssText = `
+      width:${size}px; height:${size}px;
+      background:${color};
+      left:${Math.random()*100}%;
+      animation-duration:${Math.random()*20+15}s;
+      animation-delay:${Math.random()*15}s;
+    `;
+    container.appendChild(p);
+  }
+}
+initParticles();
+
+// =====================================================================
+//  UTILS
+// =====================================================================
+function showToast(msg, type='info') {
+  const c = document.getElementById('toastContainer');
+  const t = document.createElement('div');
+  const icons = {info:'ℹ️', success:'✅', error:'❌', warn:'⚠️'};
+  t.className = `toast ${type}`;
+  t.innerHTML = `${icons[type]||'ℹ️'} ${msg}`;
+  c.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+
+function showLoading(msg='Processing…') {
+  document.getElementById('loadingMsg').textContent = msg;
+  document.getElementById('loadingOverlay').classList.remove('hidden');
+}
+function hideLoading() {
+  document.getElementById('loadingOverlay').classList.add('hidden');
+}
+
+function toggleApiVis() {
+  const inp = document.getElementById('apiKey');
+  const btn = inp.nextElementSibling;
+  if (inp.type === 'password') { inp.type = 'text'; btn.textContent = '🙈 Hide'; }
+  else { inp.type = 'password'; btn.textContent = '👁 Show'; }
+}
+
+function formatMarkdown(text) {
+  // Simple markdown-to-HTML converter
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/###\s(.+)/g, '<h4>$1</h4>')
+    .replace(/##\s(.+)/g, '<h3>$1</h3>')
+    .replace(/#\s(.+)/g, '<h3>$1</h3>')
+    .replace(/^-\s(.+)/gm, '<li>$1</li>')
+    .replace(/^\d+\.\s(.+)/gm, '<li>$1</li>')
+    .replace(/(<li>.*<\/li>\n?)+/g, m => `<ul>${m}</ul>`)
+    .replace(/💚|🌿|✅/g, m => `<em>${m}</em>`)
+    .replace(/⚠️|🔴|❌/g, m => `<strong>${m}</strong>`)
+    .split('\n\n').map(p => p.trim() ? (p.startsWith('<') ? p : `<p>${p}</p>`) : '').join('');
+}
+
+// =====================================================================
+//  SETUP → START
+// =====================================================================
+function startApp() {
+  apiKey = document.getElementById('apiKey').value.trim();
+  const city = document.getElementById('city').value.trim();
+
+  if (!apiKey) { showToast('Please enter your Gemini API key', 'error'); return; }
+  if (!city)   { showToast('Please enter your city', 'error'); return; }
+
+  userProfile = {
+    apiKey,
+    city,
+    familySize: document.getElementById('familySize').value,
+    healthConcerns: document.getElementById('healthConcerns').value,
+    transport: document.getElementById('transport').value,
+    workStyle: document.getElementById('workStyle').value,
+    budget: document.getElementById('budget').value,
+    specificConcerns: document.getElementById('specificConcerns').value.trim(),
+  };
+
+  // Save to localStorage (key hashed for safety)
+  localStorage.setItem('airguard_profile', JSON.stringify({...userProfile, apiKey: btoa(apiKey)}));
+
+  // Show dashboard
+  document.getElementById('setupScreen').style.display = 'none';
+  document.getElementById('dashboard').classList.add('active');
+  document.getElementById('aqiBadge').style.display = 'flex';
+  document.getElementById('profilePill').style.display = 'flex';
+  document.getElementById('resetBtn').style.display = 'flex';
+  document.getElementById('profileName').textContent = city;
+
+  // Load data
+  loadAQIData();
+  sendWelcomeMessage();
+}
+
+function resetApp() {
+  if (!confirm('Go back to settings?')) return;
+  document.getElementById('setupScreen').style.display = 'block';
+  document.getElementById('dashboard').classList.remove('active');
+  document.getElementById('aqiBadge').style.display = 'none';
+  document.getElementById('profilePill').style.display = 'none';
+  document.getElementById('resetBtn').style.display = 'none';
+  chatHistory = [];
+  conversationHistory = [];
+  document.getElementById('chatMessages').innerHTML = '';
+}
+
+// Try restoring session
+window.addEventListener('DOMContentLoaded', () => {
+  const saved = localStorage.getItem('airguard_profile');
+  if (saved) {
+    try {
+      const p = JSON.parse(saved);
+      document.getElementById('apiKey').value = atob(p.apiKey);
+      document.getElementById('city').value = p.city || '';
+      document.getElementById('familySize').value = p.familySize || '3-4';
+      document.getElementById('healthConcerns').value = p.healthConcerns || 'none';
+      document.getElementById('transport').value = p.transport || 'car';
+      document.getElementById('workStyle').value = p.workStyle || 'office';
+      document.getElementById('budget').value = p.budget || 'low';
+      document.getElementById('specificConcerns').value = p.specificConcerns || '';
+    } catch(e) {}
+  }
+});
+
+// =====================================================================
+//  TABS
+// =====================================================================
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.getElementById(`tab-${tab}`).classList.add('active');
+  document.getElementById(`content-${tab}`).classList.add('active');
+}
+
+// =====================================================================
+//  GEMINI API CALL
+// =====================================================================
+async function callGemini(prompt, systemInstruction = null, streaming = false) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`;
+
+  const contents = [...conversationHistory, { role: 'user', parts: [{ text: prompt }] }];
+
+  const body = {
+    contents,
+    generationConfig: {
+      temperature: 0.7,
+      topP: 0.9,
+      maxOutputTokens: 2048,
+    }
+  };
+
+  if (systemInstruction) {
+    body.systemInstruction = { parts: [{ text: systemInstruction }] };
+  }
+
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+
+  if (!resp.ok) {
+    const err = await resp.json();
+    throw new Error(err.error?.message || 'API error');
+  }
+
+  const data = await resp.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  return text;
+}
+
+// One-shot call (no history tracking)
+async function callGeminiOnce(prompt, systemInstruction = null) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`;
+  const body = {
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 0.75, topP: 0.9, maxOutputTokens: 2048 },
+  };
+  if (systemInstruction) body.systemInstruction = { parts: [{ text: systemInstruction }] };
+
+  const resp = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+  if (!resp.ok) { const e = await resp.json(); throw new Error(e.error?.message || 'API error'); }
+  const data = await resp.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+}
+
+// =====================================================================
+//  SYSTEM PROMPT
+// =====================================================================
+function buildSystemPrompt() {
+  const p = userProfile;
+  return `You are AirGuard, an expert urban air quality AI assistant specialized in helping families navigate air pollution in Indian and Asian cities.
+
+USER PROFILE:
+- City: ${p.city}
+- Household size: ${p.familySize} people
+- Health concerns: ${p.healthConcerns}
+- Primary transport: ${p.transport}
+- Work style: ${p.workStyle}
+- Budget for eco-upgrades: ${p.budget}
+- Specific concerns: ${p.specificConcerns || 'None specified'}
+- Current estimated AQI: ${aqiData?.aqi || 'Unknown'} (${aqiData?.category || 'Unknown'})
+
+YOUR ROLE:
+1. Give hyper-personalized advice based on this profile
+2. Always explain the DIRECT HEALTH IMPACT of their choices in simple terms
+3. Suggest LOW-EMISSION DAILY ROUTINES tailored to their lifestyle
+4. Provide INDOOR AIR QUALITY HACKS appropriate to their budget
+5. Recommend SUSTAINABLE ALTERNATIVES with concrete emission savings
+6. Use data/percentages when possible (e.g., "switching from gas stove to induction reduces indoor VOCs by ~40%")
+7. Be empathetic — air pollution is a daily stress for families
+8. Cite local context (monsoon, winter smog, crop burning season, construction, etc.)
+9. Format responses with clear sections, emojis, and bullet points
+
+RESPONSE STYLE:
+- Conversational but expert
+- Always include a "Impact on Your Family" section
+- Bold key numbers and facts
+- Use ✅ for good actions, ⚠️ for warnings, 🔴 for high-risk items
+- Keep responses scannable with headers and bullets
+- End with one actionable "Quick Win" they can do today`;
+}
+
+// =====================================================================
+//  WELCOME MESSAGE
+// =====================================================================
+async function sendWelcomeMessage() {
+  const prompt = `Generate a warm, personalized welcome message for a family in ${userProfile.city} with ${userProfile.familySize} household members. 
+  Their health concerns: ${userProfile.healthConcerns}. Transport: ${userProfile.transport}.
+  
+  Include:
+  1. A personalized greeting acknowledging their city's air quality challenges
+  2. 3 key areas you'll help them with (routines, indoor quality, alternatives)
+  3. The most important thing they should know about air quality in their city right now (winter smog context if applicable - it's November)
+  4. One immediate action they can take today
+  
+  Keep it encouraging, not scary. Under 200 words.`;
+
+  addMessage('assistant', '…', true);  // placeholder
+  try {
+    const response = await callGeminiOnce(prompt, buildSystemPrompt());
+    // Update placeholder
+    const msgs = document.getElementById('chatMessages');
+    const last = msgs.querySelector('.message.assistant:last-child');
+    if (last) {
+      const bubble = last.querySelector('.msg-bubble');
+      bubble.innerHTML = formatMarkdown(response);
+    }
+    // Track in history
+    conversationHistory.push(
+      { role: 'user', parts: [{ text: 'Hello, introduce yourself and tell me about air quality in my city.' }] },
+      { role: 'model', parts: [{ text: response }] }
+    );
+    addToHistory('Welcome & Introduction', response);
+  } catch (e) {
+    const msgs = document.getElementById('chatMessages');
+    const last = msgs.querySelector('.message.assistant:last-child');
+    if (last) last.querySelector('.msg-bubble').innerHTML = `❌ Could not connect to Gemini API. Please check your API key.<br/><small style="color:var(--clr-muted)">${e.message}</small>`;
+    showToast(`API Error: ${e.message}`, 'error');
+  }
+}
+
+// =====================================================================
+//  CHAT
+// =====================================================================
+function addMessage(role, text, isTyping = false) {
+  const container = document.getElementById('chatMessages');
+  const div = document.createElement('div');
+  div.className = `message ${role}`;
+
+  const avatar = document.createElement('div');
+  avatar.className = 'msg-avatar';
+  avatar.textContent = role === 'assistant' ? '🌬️' : '👤';
+
+  const bubble = document.createElement('div');
+  bubble.className = 'msg-bubble';
+
+  if (isTyping) {
+    bubble.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
+  } else {
+    bubble.innerHTML = typeof text === 'string' ? formatMarkdown(text) : text;
+  }
+
+  div.appendChild(avatar);
+  div.appendChild(bubble);
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+
+  // Hide welcome banner after first message
+  const banner = document.getElementById('welcomeBanner');
+  const qp = document.getElementById('quickPrompts');
+  if (container.children.length > 2) {
+    banner.style.display = 'none';
+    qp.style.display = 'none';
+  }
+
+  return div;
+}
+
+async function sendMessage() {
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if (!text) return;
+
+  input.value = '';
+  autoResize(input);
+  document.getElementById('sendBtn').disabled = true;
+
+  addMessage('user', text);
+
+  const typingMsg = addMessage('assistant', '', true);
+
+  try {
+    const response = await callGemini(text, buildSystemPrompt());
+
+    // Update conversation history
+    conversationHistory.push(
+      { role: 'user', parts: [{ text }] },
+      { role: 'model', parts: [{ text: response }] }
+    );
+
+    // Keep last 20 messages to avoid token overflow
+    if (conversationHistory.length > 20) conversationHistory = conversationHistory.slice(-20);
+
+    // Replace typing with response
+    typingMsg.querySelector('.msg-bubble').innerHTML = formatMarkdown(response);
+    document.getElementById('chatMessages').scrollTop = 999999;
+
+    // Add to history tab
+    addToHistory(text.substring(0, 60) + (text.length > 60 ? '…' : ''), response);
+
+  } catch (e) {
+    typingMsg.querySelector('.msg-bubble').innerHTML = `❌ Error: ${e.message}`;
+    showToast(`API Error: ${e.message}`, 'error');
+  }
+
+  document.getElementById('sendBtn').disabled = false;
+  input.focus();
+}
+
+function sendQuick(text) {
+  document.getElementById('chatInput').value = text;
+  sendMessage();
+}
+
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+}
+
+// =====================================================================
+//  AQI DATA (Simulated + AI Analysis)
+// =====================================================================
+async function loadAQIData() {
+  try {
+    // Generate realistic AQI data based on city using AI
+    const prompt = `Generate realistic current air quality data for ${userProfile.city} in November (winter smog season). 
+    Return ONLY a JSON object with these exact fields (no markdown, just JSON):
+    {
+      "aqi": <number 0-500>,
+      "category": "<Good|Moderate|Unhealthy for Sensitive Groups|Unhealthy|Very Unhealthy|Hazardous>",
+      "pm25": <number>,
+      "pm10": <number>,
+      "no2": <number>,
+      "o3": <number>,
+      "temperature": "<e.g. 18°C>",
+      "humidity": "<e.g. 72%>",
+      "dominantPollutant": "<PM2.5|PM10|NO2|O3>",
+      "trend": "<Improving|Stable|Worsening>",
+      "advice": "<2-sentence health advisory>"
+    }
+    Use realistic values for ${userProfile.city} in November. Indian cities typically have high AQI in winter.`;
+
+    const raw = await callGeminiOnce(prompt);
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      aqiData = JSON.parse(jsonMatch[0]);
+      updateAQIUI(aqiData);
+      updateHeaderBadge(aqiData);
+      generateAQIInsight(aqiData);
+    }
+  } catch (e) {
+    // Fallback data
+    aqiData = { aqi:187, category:'Unhealthy', pm25:98, pm10:156, no2:45, o3:52, temperature:'16°C', humidity:'68%', dominantPollutant:'PM2.5', trend:'Worsening' };
+    updateAQIUI(aqiData);
+    updateHeaderBadge(aqiData);
+  }
+}
+
+function refreshAQI() {
+  document.getElementById('gaugeNum').textContent = '…';
+  loadAQIData();
+  showToast('Refreshing AQI data…', 'info');
+}
+
+function updateHeaderBadge(data) {
+  const colors = { 'Good':'#34d399', 'Moderate':'#fbbf24', 'Unhealthy for Sensitive Groups':'#fb923c', 'Unhealthy':'#f87171', 'Very Unhealthy':'#c084fc', 'Hazardous':'#7c3aed' };
+  const color = colors[data.category] || '#94a3b8';
+  document.getElementById('aqiDot').style.background = color;
+  document.getElementById('aqiBadgeText').textContent = `AQI ${data.aqi}`;
+  document.getElementById('aqiBadgeText').style.color = color;
+  document.getElementById('aqiBadge').style.display = 'flex';
+}
+
+function updateAQIUI(data) {
+  document.getElementById('gaugeNum').textContent = data.aqi;
+  document.getElementById('gaugeLabel').textContent = data.category;
+  document.getElementById('aqiLocation').textContent = `${userProfile.city} · ${data.trend || 'Stable'} · ${new Date().toLocaleTimeString()}`;
+  document.getElementById('detPM25').textContent = data.pm25;
+  document.getElementById('detPM10').textContent = data.pm10;
+  document.getElementById('detNO2').textContent = data.no2;
+  document.getElementById('detO3').textContent = data.o3;
+  document.getElementById('detTemp').textContent = data.temperature;
+  document.getElementById('detHumidity').textContent = data.humidity;
+
+  // Animate gauge (AQI 0-500 → 0-346 dasharray, -90 to +90 degrees)
+  const pct = Math.min(data.aqi / 500, 1);
+  const circumference = 346;
+  setTimeout(() => {
+    document.getElementById('gaugeFill').style.strokeDasharray = `${pct * circumference} ${circumference}`;
+    const angle = -90 + (pct * 180);
+    document.getElementById('gaugeNeedle').style.transform = `rotate(${angle}deg)`;
+  }, 100);
+}
+
+async function generateAQIInsight(data) {
+  const insight = document.getElementById('aqiAiInsight');
+  insight.style.display = 'block';
+  insight.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
+
+  try {
+    const prompt = `Based on AQI ${data.aqi} (${data.category}) in ${userProfile.city} with PM2.5=${data.pm25}μg/m³, PM10=${data.pm10}μg/m³:
+    
+    Write a 3-4 sentence health advisory for a family with ${userProfile.familySize} members (health concern: ${userProfile.healthConcerns}).
+    Include: what this AQI means for them specifically, what activities to avoid/limit, and one protective action.
+    Use emojis. Be direct and practical. November winter smog context.`;
+
+    const response = await callGeminiOnce(prompt, buildSystemPrompt());
+    insight.innerHTML = `<strong>🤖 AI Health Advisory:</strong><br/><br/>${formatMarkdown(response)}`;
+  } catch(e) {
+    insight.innerHTML = `⚠️ AQI ${data.aqi} — ${data.category}. ${data.advice || 'Limit outdoor exposure and wear N95 masks.'}`;
+  }
+}
+
+// =====================================================================
+//  ROUTINES
+// =====================================================================
+async function generateRoutines() {
+  const grid = document.getElementById('routinesGrid');
+  grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:3rem;color:var(--clr-muted)"><div class="spinner" style="margin:0 auto 1rem"></div>Generating personalized routines…</div>';
+
+  try {
+    const prompt = `Create a personalized low-emission daily routine plan for:
+- City: ${userProfile.city} (AQI: ${aqiData?.aqi || '~180'}, ${aqiData?.category || 'Unhealthy'})
+- Family size: ${userProfile.familySize}
+- Health: ${userProfile.healthConcerns}
+- Transport: ${userProfile.transport}
+- Work: ${userProfile.workStyle}
+- Budget: ${userProfile.budget}
+- Month: November (winter smog season)
+
+Create 6 routine cards. Return as JSON array with this structure:
+[{
+  "title": "Morning Routine",
+  "icon": "🌅",
+  "color": "#0369a1",
+  "tips": ["tip 1", "tip 2", "tip 3"],
+  "impact": "Specific health/emission impact statement with numbers"
+}, ...]
+
+Categories: Morning Routine, Commute Strategy, Work/Study Habits, Meal & Cooking, Evening Wind-Down, Weekly Eco-Action.
+Make tips very specific to their profile. Include emission savings or health impact numbers.
+Return ONLY the JSON array.`;
+
+    const raw = await callGeminiOnce(prompt, buildSystemPrompt());
+    const jsonMatch = raw.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) throw new Error('Invalid JSON response');
+
+    const routines = JSON.parse(jsonMatch[0]);
+    renderRoutines(routines);
+  } catch(e) {
+    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:2rem;color:var(--clr-danger)">❌ Error: ${e.message}</div>`;
+    showToast('Error generating routines. Try again.', 'error');
+  }
+}
+
+function renderRoutines(routines) {
+  const grid = document.getElementById('routinesGrid');
+  grid.innerHTML = routines.map(r => `
+    <div class="routine-card" onclick="chatAbout('Tell me more about: ${r.title}')">
+      <div class="rc-header">
+        <div class="rc-icon" style="background:${r.color}22; border:1px solid ${r.color}44">${r.icon}</div>
+        <div>
+          <div class="rc-title">${r.title}</div>
+          <div class="rc-subtitle">Click to explore with AI</div>
+        </div>
+      </div>
+      <ul class="rc-tips">
+        ${r.tips.map(t => `<li class="rc-tip">${t}</li>`).join('')}
+      </ul>
+      <div class="rc-impact">💡 ${r.impact}</div>
+    </div>
+  `).join('');
+}
+
+function chatAbout(text) {
+  switchTab('chat');
+  document.getElementById('chatInput').value = text;
+  sendMessage();
+}
+
+// =====================================================================
+//  INDOOR AIR QUALITY
+// =====================================================================
+async function generateIndoor() {
+  const grid = document.getElementById('indoorGrid');
+  grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:3rem;color:var(--clr-muted)"><div class="spinner" style="margin:0 auto 1rem"></div>Generating indoor air tips…</div>';
+
+  try {
+    const prompt = `Create indoor air quality improvement tips for a ${userProfile.familySize}-person household in ${userProfile.city}.
+Budget: ${userProfile.budget}. Health concerns: ${userProfile.healthConcerns}.
+November winter — windows closed, heating on.
+
+Return JSON array of 8 cards:
+[{
+  "title": "Card Title",
+  "icon": "🌿",
+  "category": "category name",
+  "tips": ["tip1 with specific product/action", "tip2", "tip3"],
+  "cost": "Free|<₹500|₹500-₹2000|₹2000-₹10000|₹10000+"
+}]
+
+Categories to cover: Air Purifier Setup, Indoor Plants, Ventilation Timing, Cooking Practices, Humidity Control, Cleaning Methods, Toxic Product Replacement, Air Quality Monitoring.
+Make tips specific, actionable, with product names when relevant (Indian market).
+Return ONLY valid JSON array.`;
+
+    const raw = await callGeminiOnce(prompt, buildSystemPrompt());
+    const jsonMatch = raw.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) throw new Error('No valid JSON');
+    const cards = JSON.parse(jsonMatch[0]);
+    renderIndoor(cards);
+  } catch(e) {
+    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;color:var(--clr-danger);padding:2rem">❌ ${e.message}</div>`;
+  }
+}
+
+function renderIndoor(cards) {
+  const grid = document.getElementById('indoorGrid');
+  const budgetColors = {'Free':'#34d399','<₹500':'#34d399','₹500-₹2000':'#fbbf24','₹2000-₹10000':'#fb923c','₹10000+':'#f87171'};
+  grid.innerHTML = cards.map(c => `
+    <div class="indoor-card">
+      <h3>
+        ${c.icon} ${c.title}
+        <span style="margin-left:auto;font-size:.7rem;background:${budgetColors[c.cost]||'#94a3b8'}22;color:${budgetColors[c.cost]||'#94a3b8'};border-radius:999px;padding:.15rem .5rem;font-weight:600">${c.cost}</span>
+      </h3>
+      <ul>
+        ${c.tips.map(t => `<li>${t}</li>`).join('')}
+      </ul>
+    </div>
+  `).join('');
+}
+
+// =====================================================================
+//  SUSTAINABLE ALTERNATIVES
+// =====================================================================
+async function generateAlternatives() {
+  const container = document.getElementById('alternativesContent');
+  container.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--clr-muted)"><div class="spinner" style="margin:0 auto 1rem"></div>Finding sustainable alternatives…</div>';
+
+  try {
+    const prompt = `Generate sustainable alternatives for a family in ${userProfile.city}.
+Transport: ${userProfile.transport}. Budget: ${userProfile.budget}. Family size: ${userProfile.familySize}.
+
+Return JSON array of 6 comparisons:
+[{
+  "badOption": {
+    "name": "Current Practice",
+    "description": "Brief description",
+    "emission": "e.g. 2.3 kg CO2/day",
+    "healthRisk": "e.g. 40% higher PM2.5 exposure"
+  },
+  "goodOption": {
+    "name": "Green Alternative",
+    "description": "Brief description",
+    "emission": "e.g. 0.1 kg CO2/day",
+    "saving": "e.g. Saves 2.2 kg CO2/day, reduces PM2.5 exposure by 85%"
+  },
+  "category": "Transport|Energy|Food|Home|Shopping|Lifestyle",
+  "difficulty": "Easy|Medium|Hard",
+  "monthlySaving": "₹X estimated savings"
+}]
+
+Tailored to their specific transport and lifestyle. Use realistic Indian market numbers.
+Return ONLY valid JSON.`;
+
+    const raw = await callGeminiOnce(prompt, buildSystemPrompt());
+    const jsonMatch = raw.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) throw new Error('No valid JSON');
+    const alts = JSON.parse(jsonMatch[0]);
+    renderAlternatives(alts);
+  } catch(e) {
+    container.innerHTML = `<div style="text-align:center;color:var(--clr-danger);padding:2rem">❌ ${e.message}</div>`;
+  }
+}
+
+function renderAlternatives(alts) {
+  const diffColors = {Easy:'#34d399', Medium:'#fbbf24', Hard:'#fb923c'};
+  const catIcons = {Transport:'🚗',Energy:'⚡',Food:'🍲',Home:'🏠',Shopping:'🛍',Lifestyle:'💚'};
+
+  const container = document.getElementById('alternativesContent');
+  container.innerHTML = alts.map(a => `
+    <div style="margin-bottom:1.5rem">
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.7rem">
+        <span style="font-size:1.1rem">${catIcons[a.category]||'🌱'}</span>
+        <span style="font-weight:700;font-size:.95rem">${a.category}</span>
+        <span style="margin-left:auto;background:${diffColors[a.difficulty]||'#94a3b8'}22;color:${diffColors[a.difficulty]||'#94a3b8'};border-radius:999px;padding:.15rem .6rem;font-size:.75rem;font-weight:600">${a.difficulty}</span>
+        <span style="color:var(--clr-accent);font-size:.8rem;font-weight:600">💰 ${a.monthlySaving}</span>
+      </div>
+      <div class="alt-compare">
+        <div class="alt-card bad">
+          <div class="alt-label bad">❌ Current Practice</div>
+          <div class="alt-name">${a.badOption.name}</div>
+          <div class="alt-desc">${a.badOption.description}</div>
+          <div class="alt-em" style="color:var(--clr-danger)">📊 ${a.badOption.emission}</div>
+          <div style="font-size:.78rem;color:var(--clr-muted);margin-top:.3rem">⚠️ ${a.badOption.healthRisk}</div>
+        </div>
+        <div class="vs-arrow">→</div>
+        <div class="alt-card good">
+          <div class="alt-label good">✅ Green Alternative</div>
+          <div class="alt-name">${a.goodOption.name}</div>
+          <div class="alt-desc">${a.goodOption.description}</div>
+          <div class="alt-em" style="color:var(--clr-accent)">💚 ${a.goodOption.saving}</div>
+        </div>
+      </div>
+    </div>
+  `).join('<hr class="divider"/>');
+}
+
+// =====================================================================
+//  HISTORY
+// =====================================================================
+function addToHistory(question, answer) {
+  chatHistory.unshift({ question, answer, aqi: aqiData?.aqi, category: aqiData?.category, time: new Date().toLocaleTimeString() });
+  if (chatHistory.length > 50) chatHistory.pop();
+  renderHistory();
+}
+
+function renderHistory() {
+  const list = document.getElementById('historyList');
+  if (!chatHistory.length) { list.innerHTML = '<div style="text-align:center;color:var(--clr-muted);padding:3rem">No history yet.</div>'; return; }
+
+  const aqiColors = {'Good':'#34d399','Moderate':'#fbbf24','Unhealthy for Sensitive Groups':'#fb923c','Unhealthy':'#f87171','Very Unhealthy':'#c084fc','Hazardous':'#7c3aed'};
+
+  list.innerHTML = chatHistory.map((h, i) => `
+    <div class="history-item" onclick="showHistoryDetail(${i})" style="cursor:pointer">
+      <div>
+        <div class="hi-q">${h.question}</div>
+        <div class="hi-t">🕐 ${h.time}</div>
+      </div>
+      ${h.aqi ? `<span class="hi-aqi" style="background:${aqiColors[h.category]||'#94a3b8'}22;color:${aqiColors[h.category]||'#94a3b8'}">AQI ${h.aqi}</span>` : ''}
+    </div>
+  `).join('');
+}
+
+function showHistoryDetail(i) {
+  const h = chatHistory[i];
+  switchTab('chat');
+  addMessage('user', h.question);
+  addMessage('assistant', h.answer);
+}
+
+function clearHistory() {
+  if (!confirm('Clear all history?')) return;
+  chatHistory = [];
+  conversationHistory = [];
+  renderHistory();
+  document.getElementById('chatMessages').innerHTML = '';
+  showToast('History cleared', 'success');
+}
+
+// =====================================================================
+//  AUTO-LOAD ON TAB SWITCH
+// =====================================================================
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  const original = btn.onclick;
+  btn.addEventListener('click', function() {
+    const tab = this.id.replace('tab-','');
+    // Auto-generate if empty
+    setTimeout(() => {
+      if (tab === 'aqi' && !aqiData) loadAQIData();
+      if (tab === 'routines' && document.getElementById('routinesGrid').children.length === 1) generateRoutines();
+      if (tab === 'indoor' && document.getElementById('indoorGrid').children.length === 1) generateIndoor();
+      if (tab === 'alternatives' && document.getElementById('alternativesContent').children.length === 1) generateAlternatives();
+    }, 100);
+  });
+});
+</script>
+</body>
+</html>

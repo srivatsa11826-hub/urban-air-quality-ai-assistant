@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AirGuard – Urban Air Quality & Family Health Platform</title>
+  <link rel="stylesheet" href="/css/style.css"/>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌬️</text></svg>"/>
+</head>
+<body>
+
+<!-- Toast Alerts -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- ══════════════ AUTHENTICATION SCREEN ══════════════ -->
+<div id="authScreen">
+  <div class="flex items-center" style="min-height:100vh;justify-content:center;padding:2rem">
+    <div class="card" style="width:100%;max-width:440px;padding:2.5rem;box-shadow:var(--shadow-md)">
+      <div style="text-align:center;margin-bottom:2rem">
+        <div class="logo-icon" style="margin:0 auto 1rem;width:48px;height:48px;font-size:1.5rem">🌬️</div>
+        <h1 style="font-size:1.75rem;font-weight:800;letter-spacing:-.02em;color:var(--text-main)">AirGuard</h1>
+        <p class="muted" style="font-size:.88rem;margin-top:.35rem">Urban Air Quality & Respiratory Protection Platform</p>
+      </div>
+
+      <div class="flex" style="border:1px solid var(--border);border-radius:var(--r-sm);overflow:hidden;margin-bottom:1.5rem;background:var(--surface-subtle)">
+        <button class="btn btn-ghost w-full" id="tab-login" onclick="switchAuthTab('login')" style="border:none;border-radius:0;background:var(--primary);color:#fff">Sign In</button>
+        <button class="btn btn-ghost w-full" id="tab-register" onclick="switchAuthTab('register')" style="border:none;border-radius:0">Create Account</button>
+      </div>
+
+      <div id="authMsg"></div>
+
+      <!-- Login Form -->
+      <form id="loginForm" onsubmit="handleLogin(event)">
+        <div class="form-group">
+          <label>Email Address</label>
+          <input type="email" id="loginEmail" placeholder="name@domain.com" required autocomplete="email" value="demo@airguard.com"/>
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="loginPass" placeholder="••••••••" required autocomplete="current-password" value="password123"/>
+        </div>
+        <button type="submit" class="btn btn-primary w-full mt-2" id="loginBtn">Sign In to Dashboard</button>
+
+        <div style="margin-top:1.2rem;padding-top:1rem;border-top:1px solid var(--border);text-align:center">
+          <button type="button" class="btn btn-secondary btn-sm w-full" onclick="fillDemoAndLogin()">
+            ⚡ Instant Demo Login (demo@airguard.com)
+          </button>
+        </div>
+      </form>
+
+      <!-- Register Form -->
+      <form id="registerForm" class="hidden" onsubmit="handleRegister(event)">
+        <div class="form-group">
+          <label>Full Name</label>
+          <input type="text" id="regName" placeholder="Dr. Aisha Sharma" required/>
+        </div>
+        <div class="form-group">
+          <label>Email Address</label>
+          <input type="email" id="regEmail" placeholder="aisha@example.com" required autocomplete="email"/>
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="regPass" placeholder="Min 6 characters" required minlength="6" autocomplete="new-password"/>
+        </div>
+        <button type="submit" class="btn btn-primary w-full mt-2" id="regBtn">Create Account</button>
+      </form>
+
+      <p class="form-hint" style="text-align:center;margin-top:1.5rem">
+        Independent atmospheric data & localized family guidance.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ SETUP & PROFILE WIZARD ══════════════ -->
+<div id="setupScreen" class="hidden">
+  <div class="flex" style="min-height:100vh;justify-content:center;align-items:flex-start;padding:3rem 1.5rem">
+    <div class="card" style="width:100%;max-width:700px;padding:2.5rem;box-shadow:var(--shadow-md)">
+      <div style="text-align:center;margin-bottom:2rem">
+        <span class="chip primary" style="margin-bottom:.8rem">Household Intake Profile</span>
+        <h2 style="font-size:1.6rem;font-weight:800;color:var(--text-main);letter-spacing:-.02em">Configure Your Clean Air Settings</h2>
+        <p class="muted" style="font-size:.9rem;margin-top:.4rem">Recommendations and daily ventilation windows are calibrated to your specific city and family health needs.</p>
+      </div>
+
+      <form onsubmit="handleProfileSave(event)">
+        <div class="form-row">
+          <div class="form-group">
+            <label>City or Metro Area</label>
+            <input type="text" id="pCity" placeholder="New Delhi, Mumbai, Beijing, Lahore..." required/>
+          </div>
+          <div class="form-group">
+            <label>Gemini API Key (Optional)</label>
+            <div style="display:flex;gap:.4rem">
+              <input type="password" id="pApiKey" placeholder="AIza... (or use platform default)" style="flex:1"/>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="togglePass('pApiKey',this)">👁</button>
+            </div>
+            <p class="form-hint">Free key from <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a></p>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Household Members</label>
+            <select id="pFamily">
+              <option value="1">1 Person (Solo)</option>
+              <option value="2">2 People (Couple)</option>
+              <option value="3-4" selected>3–4 People (Family)</option>
+              <option value="5+">5+ People (Multigenerational)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Health Vulnerabilities</label>
+            <select id="pHealth">
+              <option value="none">General Health / None</option>
+              <option value="asthma">Asthma or Chronic Bronchitis</option>
+              <option value="heart">Cardiovascular / Heart Condition</option>
+              <option value="elderly">Elderly Household Members (65+)</option>
+              <option value="children">Infants or Young Children</option>
+              <option value="pregnant">Pregnancy</option>
+              <option value="multiple">Multiple Vulnerable Members</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Primary Commute Method</label>
+            <select id="pTransport">
+              <option value="car">Personal Petrol/Diesel Car</option>
+              <option value="motorbike">Two-Wheeler (Motorbike/Scooter)</option>
+              <option value="public">Metro Rail, Bus, or Train</option>
+              <option value="cycle">Walking or Cycling</option>
+              <option value="ev">Electric Vehicle (EV)</option>
+              <option value="mixed">Mixed Commute</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Work & Routine Setting</label>
+            <select id="pWork">
+              <option value="office">Office / On-Site Commute</option>
+              <option value="remote">Work from Home (100% Remote)</option>
+              <option value="hybrid">Hybrid Routine (2-3 days commute)</option>
+              <option value="outdoor">Outdoor / Field Work</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Budget for Air Upgrades & Filters</label>
+          <select id="pBudget">
+            <option value="zero">Zero Budget (Behavioral & free hacks only)</option>
+            <option value="low" selected>Low Budget (₹500 – ₹2,000 / month)</option>
+            <option value="medium">Medium Budget (₹2,000 – ₹10,000 / month)</option>
+            <option value="high">Comprehensive (₹10,000+ / HEPA filtration suites)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Specific Observations or Local Challenges</label>
+          <textarea id="pConcerns" placeholder="e.g. Children walking to school through morning traffic... LPG cooking in unvented kitchen... High dust from nearby arterial road..." rows="3"></textarea>
+        </div>
+
+        <div class="flex justify-between items-center" style="margin-top:1.5rem">
+          <button type="button" class="btn btn-ghost" onclick="skipProfile()">Skip & Use Standards</button>
+          <button type="submit" class="btn btn-primary" id="profileSaveBtn">Save & Open Dashboard →</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ MAIN DASHBOARD APPLICATION ══════════════ -->
+<div id="appScreen" class="hidden">
+
+  <!-- Clean Top Navigation Bar -->
+  <header class="header">
+    <div class="logo" onclick="showPage('chat')">
+      <div class="logo-icon">🌬️</div>
+      <div>
+        <h1>AirGuard</h1>
+        <p>Urban Air Quality Platform</p>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-2 ml-auto">
+      <div class="aqi-badge" id="headerAqi" onclick="showPage('aqi')" style="display:none" title="Click to view sensor telemetry">
+        <div class="aqi-dot" id="headerAqiDot" style="background:#64748b"></div>
+        <span id="headerAqiText" style="color:var(--text-main)">AQI –</span>
+      </div>
+
+      <div class="profile-pill" onclick="showPage('profile')" title="View Household Profile">
+        <div class="pp-av">👤</div>
+        <span id="headerUser">User</span>
+      </div>
+
+      <button class="btn btn-ghost btn-sm" onclick="handleLogout()" title="Sign Out">Sign Out</button>
+    </div>
+  </header>
+
+  <div class="app-layout">
+
+    <!-- Desktop Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-section-label">Navigation</div>
+        <div class="nav-item active" id="nav-chat" onclick="showPage('chat')">
+          <span class="nav-icon">💬</span> Health Consultation
+        </div>
+        <div class="nav-item" id="nav-aqi" onclick="showPage('aqi')">
+          <span class="nav-icon">📊</span> Air Telemetry & Inversion
+        </div>
+        <div class="nav-item" id="nav-routines" onclick="showPage('routines')">
+          <span class="nav-icon">🗓</span> Daily Action Checklist
+        </div>
+        <div class="nav-item" id="nav-indoor" onclick="showPage('indoor')">
+          <span class="nav-icon">🏠</span> Room Air Inspection
+        </div>
+        <div class="nav-item" id="nav-alternatives" onclick="showPage('alternatives')">
+          <span class="nav-icon">♻</span> Sustainable Swaps
+        </div>
+        <div class="nav-item" id="nav-impact" onclick="showPage('impact')">
+          <span class="nav-icon">🌱</span> Exposure & CO₂ Ledger
+        </div>
+        <div class="nav-item" id="nav-profile" onclick="showPage('profile')">
+          <span class="nav-icon">⚙</span> Profile & Safety Plan
+        </div>
+      </div>
+
+      <div class="sidebar-section" id="sessionSection">
+        <div class="sidebar-section-label flex justify-between items-center">
+          <span>Consultations</span>
+          <button class="btn btn-ghost btn-xs" onclick="newSession()" title="Start New Consultation">+ New</button>
+        </div>
+        <div id="sessionList" style="display:flex;flex-direction:column;gap:.25rem"></div>
+      </div>
+    </aside>
+
+    <!-- Main Working Area -->
+    <main class="main">
+
+      <!-- ==================== 1. HEALTH CONSULTATION CHAT ==================== -->
+      <div class="page active" id="page-chat">
+        <div class="chat-wrap">
+          <div class="chat-panel">
+
+            <!-- Message feed -->
+            <div class="chat-messages" id="chatMessages">
+              <div style="text-align:center;padding:3.5rem 1.5rem;color:var(--text-muted)">
+                <div style="font-size:2.5rem;margin-bottom:.8rem">🌬️</div>
+                <div style="font-weight:800;font-size:1.2rem;color:var(--text-main)">Air Quality Health Consultation</div>
+                <p style="font-size:.9rem;margin-top:.4rem;max-width:440px;margin-inline:auto;line-height:1.6">
+                  Personalized advice for severe smog, protective routines, indoor filtration, and children's respiratory safety.
+                </p>
+              </div>
+            </div>
+
+            <!-- Pre-formulated question pills -->
+            <div class="quick-prompts" id="quickPrompts">
+              <button class="qp" onclick="sendQuick(this.textContent)">Morning peak smog safety for school commute</button>
+              <button class="qp" onclick="sendQuick(this.textContent)">Is it safe for children to exercise outdoors today?</button>
+              <button class="qp" onclick="sendQuick(this.textContent)">How to reduce indoor cooking VOCs and smoke</button>
+              <button class="qp" onclick="sendQuick(this.textContent)">Car cabin filter recirculation vs N95 respirator</button>
+              <button class="qp" onclick="sendQuick(this.textContent)">Top oxygen-producing indoor plants for bedrooms</button>
+              <button class="qp" onclick="sendQuick(this.textContent)">How to assemble an economical Corsi-Rosenthal box filter</button>
+            </div>
+
+            <!-- Input Bar with Speech-to-Text -->
+            <div class="chat-input-bar">
+              <textarea id="chatInput" placeholder="Ask about air quality, symptoms, mask fit, or daily routines..." rows="1" onkeydown="handleChatKey(event)" oninput="autoResize(this)"></textarea>
+              <button class="mic-btn" id="micBtn" onclick="toggleSpeech()" title="Click to speak (Voice Input)">🎙️</button>
+              <button class="send-btn" id="sendBtn" onclick="sendMessage()" title="Send Question">Send</button>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== 2. AQI TELEMETRY & INVERSION DYNAMICS ==================== -->
+      <div class="page" id="page-aqi">
+        <div class="page-header flex justify-between items-center">
+          <div>
+            <h2>Air Quality Telemetry & Inversion Monitoring</h2>
+            <p id="aqiLocation" class="muted">Loading station telemetry...</p>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="loadAQI(true)">Sync Live Sensors</button>
+        </div>
+
+        <!-- Gauge + Health Advisory Hero -->
+        <div class="gauge-hero">
+          <div class="gauge-box">
+            <span class="chip primary" style="margin-bottom:1rem">Surface Sensor</span>
+            <div class="gauge-visual">
+              <svg viewBox="0 0 240 130" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                  <linearGradient id="gGrad" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%"   stop-color="#15803d"/>
+                    <stop offset="30%"  stop-color="#b45309"/>
+                    <stop offset="60%"  stop-color="#c2410c"/>
+                    <stop offset="85%"  stop-color="#b91c1c"/>
+                    <stop offset="100%" stop-color="#7f1d1d"/>
+                  </linearGradient>
+                </defs>
+                <path d="M18 125 A 102 102 0 0 1 222 125" fill="none" stroke="#e2e8f0" stroke-width="18" stroke-linecap="round"/>
+                <path id="gFill" d="M18 125 A 102 102 0 0 1 222 125" fill="none" stroke="url(#gGrad)" stroke-width="18" stroke-linecap="round" stroke-dasharray="0 321" style="transition:stroke-dasharray 1.2s ease"/>
+                <line id="gNeedle" x1="120" y1="125" x2="120" y2="30" stroke="#0f172a" stroke-width="2.5" stroke-linecap="round" transform-origin="120 125" style="transition:transform 1.2s ease;transform:rotate(-90deg)"/>
+                <circle cx="120" cy="125" r="7" fill="#ffffff" stroke="#0f172a" stroke-width="2"/>
+              </svg>
+              <div class="gauge-val">
+                <div class="gauge-num" id="gaugeNum">–</div>
+                <div class="gauge-label" id="gaugeLabel" style="color:var(--text-muted)">AQI</div>
+              </div>
+            </div>
+            <p class="muted" style="font-size:.78rem;margin-top:1rem" id="gaugeCitySubtitle">Central Environmental Station</p>
+          </div>
+
+          <div class="aqi-advisory-banner">
+            <div class="flex items-center gap-1" style="margin-bottom:.8rem">
+              <span class="chip unhealthy" id="aqiRiskChip">Health Advisory</span>
+              <span class="muted" style="font-size:.8rem" id="aqiDominantPollutant">Dominant: PM2.5</span>
+            </div>
+            <div id="aqiInsight" style="font-size:.94rem;line-height:1.7;color:var(--text-body)">
+              <div class="skeleton" style="height:18px;width:75%;margin-bottom:.6rem;background:#f1f5f9"></div>
+              <div class="skeleton" style="height:18px;width:95%;margin-bottom:.6rem;background:#f1f5f9"></div>
+              <div class="skeleton" style="height:18px;width:60%;background:#f1f5f9"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Winter Thermal Inversion Science Card -->
+        <div class="inversion-card">
+          <div class="inversion-icon">🌡️</div>
+          <div>
+            <div style="font-weight:700;font-size:1rem;color:#92400e">Atmospheric Inversion Dynamics</div>
+            <p style="font-size:.86rem;color:#78350f;margin-top:.3rem;line-height:1.55">
+              Cold, dense night air traps vehicular soot and particulate matter close to the ground, peaking between <strong>6:00 AM and 9:30 AM</strong>.
+              The boundary layer typically opens between <strong>12:30 PM and 3:30 PM</strong> as solar heating mixes the atmosphere. Keep windows sealed during morning and night.
+            </p>
+          </div>
+        </div>
+
+        <!-- 6-Pollutant Matrix with WHO Guideline Comparator -->
+        <h3 style="font-size:1.15rem;font-weight:800;color:var(--text-main);margin-bottom:1rem">Detailed Sensor Telemetry</h3>
+        <div class="pollutants-grid">
+          <div class="pollutant-card">
+            <div class="pol-header"><span class="pol-name">PM2.5</span><span>🌫️</span></div>
+            <div class="pol-val" id="dPM25">–</div>
+            <div class="pol-unit">Fine Particulates (μg/m³)</div>
+            <span class="pol-who" id="whoPM25" style="background:#fee2e2;color:#991b1b">WHO 24h: 15 μg/m³</span>
+          </div>
+
+          <div class="pollutant-card">
+            <div class="pol-header"><span class="pol-name">PM10</span><span>💨</span></div>
+            <div class="pol-val" id="dPM10">–</div>
+            <div class="pol-unit">Inhalable Dust (μg/m³)</div>
+            <span class="pol-who" id="whoPM10" style="background:#fef3c7;color:#92400e">WHO 24h: 45 μg/m³</span>
+          </div>
+
+          <div class="pollutant-card">
+            <div class="pol-header"><span class="pol-name">NO₂</span><span>🚗</span></div>
+            <div class="pol-val" id="dNO2">–</div>
+            <div class="pol-unit">Nitrogen Dioxide (μg/m³)</div>
+            <span class="pol-who" style="background:#e0f2fe;color:#0369a1">Traffic Combustion</span>
+          </div>
+
+          <div class="pollutant-card">
+            <div class="pol-header"><span class="pol-name">O₃</span><span>☀️</span></div>
+            <div class="pol-val" id="dO3">–</div>
+            <div class="pol-unit">Ground Ozone (μg/m³)</div>
+            <span class="pol-who" style="background:#dcfce7;color:#166534">Photochemical Smog</span>
+          </div>
+
+          <div class="pollutant-card">
+            <div class="pol-header"><span class="pol-name">Temperature</span><span>🌡️</span></div>
+            <div class="pol-val" id="dTemp">–</div>
+            <div class="pol-unit">Ambient Celsius</div>
+            <span class="pol-who" style="background:#f1f5f9;color:#475569">Surface Reading</span>
+          </div>
+
+          <div class="pollutant-card">
+            <div class="pol-header"><span class="pol-name">Humidity</span><span>💧</span></div>
+            <div class="pol-val" id="dHum">–</div>
+            <div class="pol-unit">Relative Moisture</div>
+            <span class="pol-who" style="background:#f1f5f9;color:#475569">Moisture Level</span>
+          </div>
+        </div>
+
+        <!-- 7-Day Trend Chart -->
+        <div class="card" style="margin-top:1.5rem">
+          <div class="flex justify-between items-center" style="margin-bottom:1rem">
+            <h3 style="font-size:1rem;font-weight:700;color:var(--text-main)">7-Day Air Quality Trend</h3>
+            <span class="muted" style="font-size:.78rem">Sensor Archive</span>
+          </div>
+          <div id="aqiHistory" style="display:flex;gap:.6rem;align-items:flex-end;height:120px;padding:.5rem 0;overflow-x:auto"></div>
+        </div>
+      </div>
+
+      <!-- ==================== 3. DAILY ACTION CHECKLIST ==================== -->
+      <div class="page" id="page-routines">
+        <div class="page-header flex justify-between items-center">
+          <div>
+            <h2>Daily Clean Air Action Checklist</h2>
+            <p class="muted">Check off your household protection steps today. Completed items directly log avoided particulate exposure and carbon savings.</p>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="generateContent('family_plan')">Regenerate Schedule</button>
+        </div>
+
+        <!-- Shield Score Header -->
+        <div class="score-hero">
+          <div>
+            <span class="chip good" style="margin-bottom:.5rem">Household Shield Rating</span>
+            <div style="font-size:1.45rem;font-weight:800;color:var(--text-main)">Compliance Score: <span id="shieldScore" style="color:var(--aqi-good)">85 / 100</span></div>
+            <p class="muted" style="font-size:.84rem;margin-top:.2rem">Tracks completed routine safeguards for children and sensitive family members.</p>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:1.75rem;font-weight:800;color:var(--primary)" id="checklistSavedTotal">0.0 kg</div>
+            <div class="muted" style="font-size:.78rem;font-weight:600">CO₂ Prevented Today</div>
+          </div>
+        </div>
+
+        <div class="checklist-container" id="checklistContainer">
+          <div style="text-align:center;padding:3rem;color:var(--text-muted)">
+            Loading customized daily routine checklist...
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== 4. ROOM-BY-ROOM INDOOR AIR INSPECTION ==================== -->
+      <div class="page" id="page-indoor">
+        <div class="page-header flex justify-between items-center">
+          <div>
+            <h2>Room-by-Room Indoor Air Quality Inspection</h2>
+            <p class="muted">Indoor pollution is frequently 2× to 5× higher than outdoor air. Select a space to review specific sources and high-impact mitigations.</p>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="generateContent('room_audit')">Run Room Inspection</button>
+        </div>
+
+        <div class="room-tabs" id="roomTabs">
+          <div class="room-tab active" onclick="switchRoom(0)"><span>🛋️</span> Living Room</div>
+          <div class="room-tab" onclick="switchRoom(1)"><span>🍳</span> Kitchen</div>
+          <div class="room-tab" onclick="switchRoom(2)"><span>🛏️</span> Master Bedroom</div>
+          <div class="room-tab" onclick="switchRoom(3)"><span>🧸</span> Children's Room</div>
+          <div class="room-tab" onclick="switchRoom(4)"><span>💻</span> Home Office</div>
+        </div>
+
+        <div class="room-detail-card" id="roomAuditContent">
+          <div style="text-align:center;padding:3rem;color:var(--text-muted)">
+            Analyzing household micro-environments...
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== 5. SUSTAINABLE ALTERNATIVES ==================== -->
+      <div class="page" id="page-alternatives">
+        <div class="page-header flex justify-between items-center">
+          <div>
+            <h2>High-Impact Sustainable Swaps</h2>
+            <p class="muted">Replace high-emission household routines with cleaner, economical alternatives tailored to your budget.</p>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="generateContent('alternatives')">Refresh Swaps</button>
+        </div>
+
+        <!-- Filter bar -->
+        <div class="alt-filter-bar">
+          <button class="alt-filter-btn active" onclick="filterAlternatives('All', this)">All Categories</button>
+          <button class="alt-filter-btn" onclick="filterAlternatives('Transport', this)">Transport</button>
+          <button class="alt-filter-btn" onclick="filterAlternatives('Food', this)">Cooking & Food</button>
+          <button class="alt-filter-btn" onclick="filterAlternatives('Home', this)">Home & Heating</button>
+          <button class="alt-filter-btn" onclick="filterAlternatives('Lifestyle', this)">Daily Lifestyle</button>
+        </div>
+
+        <div id="alternativesContent">
+          <div style="text-align:center;padding:3rem;color:var(--text-muted)">
+            Calculating emission and cost tradeoffs...
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== 6. EXPOSURE & CARBON LEDGER ==================== -->
+      <div class="page" id="page-impact">
+        <div class="page-header">
+          <h2>Environmental Footprint & Community Health Ledger</h2>
+          <p class="muted">Verified reductions in carbon output and avoided particulate inhalation for your household.</p>
+        </div>
+
+        <div class="pollutants-grid" id="impactStats" style="margin-bottom:2rem"></div>
+
+        <div class="card" style="max-width:620px;margin-bottom:2rem">
+          <h3 style="font-size:1.05rem;font-weight:700;margin-bottom:1rem;color:var(--text-main)">Log a Clean-Air Action</h3>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Action Taken</label>
+              <input type="text" id="impactAction" placeholder="e.g. Switched cooking to portable induction plate"/>
+            </div>
+            <div class="form-group">
+              <label>Category</label>
+              <select id="impactCat">
+                <option value="Transport">Transport</option>
+                <option value="Food">Cooking & Food</option>
+                <option value="Energy">Energy & Heating</option>
+                <option value="Home">Indoor Air Management</option>
+                <option value="Shopping">Eco-Friendly Choice</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Estimated CO₂ Saved (kg)</label>
+              <input type="number" id="impactCO2" placeholder="e.g. 1.8" step="0.1" min="0"/>
+            </div>
+            <div class="form-group" style="display:flex;align-items:flex-end">
+              <button class="btn btn-primary w-full" onclick="logImpact()">Record Impact</button>
+            </div>
+          </div>
+        </div>
+
+        <h3 style="font-size:1.05rem;font-weight:800;color:var(--text-main);margin-bottom:.9rem">Verified Action Ledger</h3>
+        <div id="impactLog" style="display:flex;flex-direction:column;gap:.65rem"></div>
+      </div>
+
+      <!-- ==================== 7. HOUSEHOLD PROFILE & SAFETY PLAN ==================== -->
+      <div class="page" id="page-profile">
+        <div class="page-header flex justify-between items-center">
+          <div>
+            <h2>Household Profile & Clean Air Safety Blueprint</h2>
+            <p class="muted">Tune your telemetry and export your printable family emergency defense protocol.</p>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="exportSafetyPlan()">Print Clean Air Action Plan</button>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:1.8rem">
+          <div class="card">
+            <h3 style="font-size:1.1rem;font-weight:800;color:var(--text-main);margin-bottom:1.2rem">Household Profile Settings</h3>
+            <div id="profileMsg"></div>
+            <form onsubmit="handleProfileUpdate(event)">
+              <div class="form-group">
+                <label>Gemini API Key</label>
+                <div style="display:flex;gap:.4rem">
+                  <input type="password" id="upApiKey" placeholder="AIza... (stored on your local server)" style="flex:1"/>
+                  <button type="button" class="btn btn-ghost btn-sm" onclick="togglePass('upApiKey',this)">👁</button>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label>City or Metro Region</label>
+                <input type="text" id="upCity" required/>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Household Members</label>
+                  <select id="upFamily">
+                    <option value="1">Solo (1)</option>
+                    <option value="2">Couple (2)</option>
+                    <option value="3-4">Family (3–4)</option>
+                    <option value="5+">Multigenerational (5+)</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>Health Vulnerability</label>
+                  <select id="upHealth">
+                    <option value="none">General Health</option>
+                    <option value="asthma">Asthma or Bronchitis</option>
+                    <option value="heart">Heart / Cardiovascular</option>
+                    <option value="elderly">Elderly Members (65+)</option>
+                    <option value="children">Young Children / Infants</option>
+                    <option value="pregnant">Pregnancy</option>
+                    <option value="multiple">Multiple Concerns</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Commute Mode</label>
+                  <select id="upTransport">
+                    <option value="car">Car (Petrol/Diesel)</option>
+                    <option value="motorbike">Two-Wheeler</option>
+                    <option value="public">Metro Rail / Bus</option>
+                    <option value="cycle">Walking / Cycling</option>
+                    <option value="ev">Electric Vehicle (EV)</option>
+                    <option value="mixed">Mixed</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>Work Routine</label>
+                  <select id="upWork">
+                    <option value="office">Office / On-Site</option>
+                    <option value="remote">Remote (Home)</option>
+                    <option value="hybrid">Hybrid</option>
+                    <option value="outdoor">Outdoor / Field</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label>Monthly Eco & Filtration Budget</label>
+                <select id="upBudget">
+                  <option value="zero">Zero Budget (Free behavioral hacks)</option>
+                  <option value="low">Low (₹500 – ₹2,000 / mo)</option>
+                  <option value="medium">Medium (₹2,000 – ₹10,000 / mo)</option>
+                  <option value="high">Comprehensive (₹10,000+ / mo)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label>Specific Local Concerns</label>
+                <textarea id="upConcerns" rows="3"></textarea>
+              </div>
+
+              <button type="submit" class="btn btn-primary w-full">Save Changes</button>
+            </form>
+          </div>
+
+          <div>
+            <div class="card" style="margin-bottom:1.5rem">
+              <h3 style="font-size:1.05rem;font-weight:800;color:var(--text-main);margin-bottom:1rem">Telemetry Status</h3>
+              <div id="profileStats" style="display:flex;flex-direction:column;gap:.75rem"></div>
+            </div>
+
+            <div class="card">
+              <h3 style="font-size:1.05rem;font-weight:800;color:var(--text-main);margin-bottom:.8rem">Account Security</h3>
+              <div id="pwdMsg"></div>
+              <form onsubmit="handlePasswordChange(event)">
+                <div class="form-group">
+                  <label>Current Password</label>
+                  <input type="password" id="curPwd" required/>
+                </div>
+                <div class="form-group">
+                  <label>New Password</label>
+                  <input type="password" id="newPwd" required minlength="6"/>
+                </div>
+                <button type="submit" class="btn btn-secondary w-full btn-sm">Update Password</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- Mobile Bottom Navigation -->
+  <nav class="mobile-nav">
+    <button class="mobile-nav-item active" id="mn-chat" onclick="showPage('chat')"><span class="mn-icon">💬</span>Consult</button>
+    <button class="mobile-nav-item" id="mn-aqi" onclick="showPage('aqi')"><span class="mn-icon">📊</span>Telemetry</button>
+    <button class="mobile-nav-item" id="mn-routines" onclick="showPage('routines')"><span class="mn-icon">🗓</span>Plan</button>
+    <button class="mobile-nav-item" id="mn-indoor" onclick="showPage('indoor')"><span class="mn-icon">🏠</span>Rooms</button>
+    <button class="mobile-nav-item" id="mn-alternatives" onclick="showPage('alternatives')"><span class="mn-icon">♻</span>Swaps</button>
+    <button class="mobile-nav-item" id="mn-impact" onclick="showPage('impact')"><span class="mn-icon">🌱</span>Ledger</button>
+  </nav>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/app.js"></script>
+</body>
+</html>
