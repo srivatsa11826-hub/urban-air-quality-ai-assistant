@@ -1,4 +1,23 @@
+# Dependencies
 node_modules/
+
+# Environment Variables & Secrets
 .env
+.env.*
+!.env.example
+
+# SQLite Databases & Lockfiles
+airguard.db
+airguard.db-shm
+airguard.db-wal
+*.db
 *.db-shm
 *.db-wal
+*.db-journal
+test*.db
+
+# Logs & Debugging
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

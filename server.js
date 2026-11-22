@@ -14,25 +14,31 @@ const PORT = process.env.PORT || 3000;
 
 // ============ SECURITY MIDDLEWARE ============
 app.use(helmet({
-  contentSecurityPolicy: false,  // Allow inline scripts in our HTML
+  contentSecurityPolicy: false, // Allow inline scripts/styles in our SPA
 }));
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' ? false : '*',
   credentials: true,
 }));
-app.use(express.json({ limit: '2mb' }));
-app.use(express.urlencoded({ extended: true }));
+
+// Payload size limit restricted to 100kb for attack surface minimization
+app.use(express.json({ limit: '100kb' }));
+app.use(express.urlencoded({ extended: true, limit: '100kb' }));
 
 // Rate limiting
 const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,  // 15 mins
+  windowMs: 15 * 60 * 1000, // 15 mins
   max: 200,
   message: { error: 'Too many requests, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
-  message: { error: 'Too many auth attempts.' },
+  message: { error: 'Too many auth attempts, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
 app.use('/api/', apiLimiter);
@@ -42,11 +48,11 @@ app.use('/api/auth/', authLimiter);
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ============ API ROUTES ============
-app.use('/api/auth',    require('./routes/auth'));
+app.use('/api/auth', require('./routes/auth'));
 app.use('/api/profile', require('./routes/profile'));
-app.use('/api/aqi',     require('./routes/aqi'));
-app.use('/api/chat',    require('./routes/chat'));
-app.use('/api/impact',  require('./routes/impact'));
+app.use('/api/aqi', require('./routes/aqi'));
+app.use('/api/chat', require('./routes/chat'));
+app.use('/api/impact', require('./routes/impact'));
 
 // ============ HEALTH CHECK ============
 app.get('/api/health', (req, res) => {
@@ -58,8 +64,7 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// ============ SPA FALLBACK ============
-// All non-API routes → serve index.html
+// ============ SPA FALLBACK & API 404 ============
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({ error: 'API endpoint not found' });
@@ -69,7 +74,10 @@ app.get('*', (req, res) => {
 
 // ============ GLOBAL ERROR HANDLER ============
 app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err.message);
+  console.error('Unhandled server error:', err.message || err);
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'Payload too large (max 100kb allowed)' });
+  }
   res.status(500).json({ error: 'Internal server error' });
 });
 

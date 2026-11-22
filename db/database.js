@@ -3,23 +3,59 @@
 const { DatabaseSync } = require('node:sqlite');
 const path = require('path');
 
-const DB_PATH = process.env.DB_PATH || './airguard.db';
+const DEFAULT_DB_PATH = process.env.DB_PATH || './airguard.db';
 
-let db;
+let db = null;
 
-function getDb() {
+function getDb(customPath = null) {
+  // If customPath is explicitly provided (e.g. ':memory:' or temporary file for tests)
+  if (customPath) {
+    const targetPath = customPath === ':memory:' ? ':memory:' : path.resolve(customPath);
+    const customDb = new DatabaseSync(targetPath);
+    customDb.exec('PRAGMA busy_timeout = 5000');
+    if (customPath !== ':memory:') {
+      try {
+        customDb.exec('PRAGMA journal_mode = WAL');
+      } catch (_) {}
+    }
+    customDb.exec('PRAGMA foreign_keys = ON');
+    initSchema(customDb);
+    return customDb;
+  }
+
+  // Singleton instance for the application
   if (!db) {
-    db = new DatabaseSync(path.resolve(DB_PATH));
-    db.exec('PRAGMA journal_mode = WAL');
-    db.exec('PRAGMA foreign_keys = ON');
+    db = new DatabaseSync(path.resolve(DEFAULT_DB_PATH));
     db.exec('PRAGMA busy_timeout = 5000');
-    initSchema();
+    try {
+      db.exec('PRAGMA journal_mode = WAL');
+    } catch (_) {}
+    db.exec('PRAGMA foreign_keys = ON');
+    initSchema(db);
   }
   return db;
 }
 
-function initSchema() {
-  db.exec(`
+function closeDb(customInstance = null) {
+  if (customInstance) {
+    try {
+      customInstance.close();
+    } catch (_) {}
+    return;
+  }
+  if (db) {
+    try {
+      db.close();
+    } catch (_) {}
+    db = null;
+  }
+}
+
+function initSchema(targetDb = db) {
+  if (!targetDb) return;
+
+  try {
+    targetDb.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       uuid        TEXT    UNIQUE NOT NULL,
@@ -105,14 +141,87 @@ function initSchema() {
       logged_at   TEXT    DEFAULT (datetime('now'))
     );
 
+    -- Resilient City AQI Cache Table (15-min TTL with stale-cache fallback)
+    CREATE TABLE IF NOT EXISTS aqi_cache (
+      city       TEXT PRIMARY KEY COLLATE NOCASE,
+      payload    TEXT NOT NULL,
+      fetched_at INTEGER NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id);
     CREATE INDEX IF NOT EXISTS idx_chat_sessions_user    ON chat_sessions(user_id);
     CREATE INDEX IF NOT EXISTS idx_aqi_user_city         ON aqi_readings(user_id, city);
     CREATE INDEX IF NOT EXISTS idx_recommendations_user  ON recommendations(user_id, type);
     CREATE INDEX IF NOT EXISTS idx_impact_user           ON impact_log(user_id);
+    CREATE INDEX IF NOT EXISTS idx_aqi_cache_fetched     ON aqi_cache(fetched_at);
   `);
-
-  console.log('✅ Database schema ready (node:sqlite)');
+  } catch (err) {
+    if (!err.message || !err.message.includes('locked')) {
+      throw err;
+    }
+  }
 }
 
-module.exports = { getDb };
+/**
+ * Retrieve cached AQI payload for a city from SQLite.
+ * @param {string} city - Name of city
+ * @param {number|null} maxAgeMs - Maximum acceptable cache age in milliseconds (defaults to 900,000 ms = 15 mins).
+ *                                Pass null or Infinity to retrieve stale entries.
+ * @param {object|null} targetDb - Optional DatabaseSync instance (e.g. for in-memory tests)
+ * @returns {object|null} Parsed payload object with cachedAt metadata, or null if missing/expired
+ */
+function getCachedAqi(city, maxAgeMs = 900000, targetDb = null) {
+  if (!city || typeof city !== 'string') return null;
+  const activeDb = targetDb || getDb();
+  const normalizedCity = city.trim();
+  const row = activeDb.prepare('SELECT payload, fetched_at FROM aqi_cache WHERE city = ?').get(normalizedCity);
+  if (!row) return null;
+
+  const now = Date.now();
+  const age = now - row.fetched_at;
+  if (maxAgeMs != null && maxAgeMs !== Infinity && age > maxAgeMs) {
+    return null; // Expired past TTL
+  }
+
+  try {
+    const data = JSON.parse(row.payload);
+    return {
+      ...data,
+      cachedAt: row.fetched_at,
+      cacheAgeMs: age,
+      isFresh: maxAgeMs == null || age <= maxAgeMs,
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Store AQI payload in SQLite cache with current timestamp.
+ * @param {string} city - Name of city
+ * @param {object|string} payload - AQI data object or JSON string
+ * @param {object|null} targetDb - Optional DatabaseSync instance
+ */
+function setCachedAqi(city, payload, targetDb = null) {
+  if (!city || typeof city !== 'string' || !payload) return;
+  const activeDb = targetDb || getDb();
+  const normalizedCity = city.trim();
+  const now = Date.now();
+  const payloadStr = typeof payload === 'string' ? payload : JSON.stringify(payload);
+
+  activeDb.prepare(`
+    INSERT INTO aqi_cache (city, payload, fetched_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(city) DO UPDATE SET
+      payload = excluded.payload,
+      fetched_at = excluded.fetched_at
+  `).run(normalizedCity, payloadStr, now);
+}
+
+module.exports = {
+  getDb,
+  closeDb,
+  initSchema,
+  getCachedAqi,
+  setCachedAqi,
+};

@@ -556,6 +556,38 @@ function sendQuick(text) {
   sendMessage();
 }
 
+// One-Click Persona Quick-Prompt Chips Controller
+function triggerPersonaChip(chipKey) {
+  const city = profile?.city || aqiData?.city || 'my city';
+  const aqi = aqiData?.aqi || 185;
+  const pm25 = aqiData?.pm25 || 115;
+
+  let prompt = '';
+  switch (chipKey) {
+    case 'run':
+      prompt = `I am in ${city} where current AQI is ${aqi} (PM2.5: ${pm25} µg/m³). Is it safe for an outdoor evening run or workout today, and what specific respiratory precautions should I take?`;
+      break;
+    case 'child':
+      prompt = `Given the current air pollution in ${city} (AQI: ${aqi}, PM2.5: ${pm25} µg/m³), what specific precautions should I take to protect children and members with asthma today?`;
+      break;
+    case 'ventilate':
+      prompt = `What is the best time window today to ventilate my home in ${city} to avoid winter smog ingress and toxic particulate accumulation?`;
+      break;
+    case 'pm25':
+      prompt = `Why is PM2.5 high today in ${city} (current AQI: ${aqi}), and what atmospheric inversion or local factors are causing this spike?`;
+      break;
+    default:
+      prompt = `How should our family protect ourselves from current air quality in ${city} (AQI: ${aqi})?`;
+  }
+
+  const input = document.getElementById('chatInput');
+  if (input) {
+    input.value = prompt;
+    autoResize(input);
+    sendMessage();
+  }
+}
+
 function handleChatKey(e) {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
@@ -612,8 +644,46 @@ function generateFollowupQuestions(text) {
 }
 
 // ============================================================
-//  AQI & INVERSION ENGINE
+//  AQI & INVERSION ENGINE WITH CPCB NAQI & WHO DUAL STANDARDS
 // ============================================================
+let currentStandard = 'cpcb'; // 'cpcb' or 'who'
+
+function setStandard(std) {
+  currentStandard = std;
+  const btnCpcb = document.getElementById('btn-std-cpcb');
+  const btnWho = document.getElementById('btn-std-who');
+
+  if (btnCpcb && btnWho) {
+    btnCpcb.classList.toggle('active', std === 'cpcb');
+    btnCpcb.setAttribute('aria-checked', std === 'cpcb' ? 'true' : 'false');
+    btnCpcb.setAttribute('aria-pressed', std === 'cpcb' ? 'true' : 'false');
+
+    btnWho.classList.toggle('active', std === 'who');
+    btnWho.setAttribute('aria-checked', std === 'who' ? 'true' : 'false');
+    btnWho.setAttribute('aria-pressed', std === 'who' ? 'true' : 'false');
+  }
+
+  if (aqiData) {
+    updateAQIUI(aqiData);
+  }
+  toast(`Switched assessment to ${std === 'cpcb' ? 'Indian CPCB NAQI Standard' : 'WHO 2021 Global Guidelines'}`, 'info');
+}
+
+// CPCB Categories and Breakpoints
+const CPCB_BREAKPOINTS = [
+  { max: 50,  label: 'Good',         chipClass: 'good',         color: '#14532d' },
+  { max: 100, label: 'Satisfactory', chipClass: 'satisfactory', color: '#047857' },
+  { max: 200, label: 'Moderate',     chipClass: 'mod',          color: '#78350f' },
+  { max: 300, label: 'Poor',         chipClass: 'unhealthy',    color: '#7c2d12' },
+  { max: 400, label: 'Very Poor',    chipClass: 'severe',       color: '#7f1d1d' },
+  { max: 500, label: 'Severe',       chipClass: 'severe',       color: '#581c87' },
+];
+
+function getCPCBInfo(aqi) {
+  const val = Number(aqi) || 0;
+  return CPCB_BREAKPOINTS.find(b => val <= b.max) || CPCB_BREAKPOINTS[CPCB_BREAKPOINTS.length - 1];
+}
+
 async function loadAQI(force = false) {
   try {
     const city = profile?.city;
@@ -645,13 +715,55 @@ function updateHeaderBadge(data) {
 }
 
 function updateAQIUI(data) {
+  if (!data) return;
+
   document.getElementById('gaugeNum').textContent = data.aqi;
-  document.getElementById('gaugeLabel').textContent = data.category?.label || data.category || 'Reading';
+
+  const isCPCB = currentStandard === 'cpcb';
+  const cpcbInfo = getCPCBInfo(data.aqi);
+  const riskChip = document.getElementById('aqiRiskChip');
+  const gaugeLabel = document.getElementById('gaugeLabel');
+
+  if (isCPCB) {
+    gaugeLabel.textContent = cpcbInfo.label;
+    if (riskChip) {
+      riskChip.textContent = `CPCB NAQI: ${cpcbInfo.label}`;
+      riskChip.className = `chip ${cpcbInfo.chipClass}`;
+    }
+  } else {
+    // WHO 2021 Mode
+    const pm25Val = data.pm25 || 0;
+    const whoRatio = parseFloat((pm25Val / 15).toFixed(1));
+    gaugeLabel.textContent = whoRatio > 1 ? `${whoRatio}× WHO Limit` : 'Within WHO Limit';
+    if (riskChip) {
+      if (whoRatio > 4) {
+        riskChip.textContent = `WHO 2021: ${whoRatio}× Limit (Severe Exceedance)`;
+        riskChip.className = 'chip severe';
+      } else if (whoRatio > 2) {
+        riskChip.textContent = `WHO 2021: ${whoRatio}× Limit (High Exceedance)`;
+        riskChip.className = 'chip unhealthy';
+      } else if (whoRatio > 1) {
+        riskChip.textContent = `WHO 2021: ${whoRatio}× Limit (Moderate Exceedance)`;
+        riskChip.className = 'chip mod';
+      } else {
+        riskChip.textContent = 'WHO 2021: Compliant (Within 15 μg/m³)';
+        riskChip.className = 'chip good';
+      }
+    }
+  }
+
+  const cacheSourceLabel = data.source === 'cache'
+    ? '⚡ SQLite Cache (15-min TTL)'
+    : data.source === 'stale-cache'
+    ? '🔄 Resilient Cache Fallback'
+    : data.source === 'waqi'
+    ? '📡 Live Central Sensor Feed'
+    : '🔬 Calibrated Sensor Baseline';
 
   document.getElementById('aqiLocation').textContent =
-    `Monitoring station: ${data.city} · ${data.source === 'waqi' ? 'Live CPCB / Central Feed' : 'Calibrated Local Sensor'} · Updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    `Monitoring Station: ${data.city} · ${cacheSourceLabel} · Active Standard: ${isCPCB ? 'Indian CPCB NAQI' : 'WHO 2021 Guidelines'}`;
 
-  document.getElementById('gaugeCitySubtitle').textContent = `${data.city} Surface Ambient Sensor`;
+  document.getElementById('gaugeCitySubtitle').textContent = `${data.city} · ${isCPCB ? 'CPCB NAQI (0–500)' : 'WHO 2021 24h Thresholds'}`;
 
   document.getElementById('dPM25').textContent = data.pm25 ?? '–';
   document.getElementById('dPM10').textContent = data.pm10 ?? '–';
@@ -660,16 +772,59 @@ function updateAQIUI(data) {
   document.getElementById('dTemp').textContent = data.temperature ?? '–';
   document.getElementById('dHum').textContent  = data.humidity   ?? '–';
 
-  // WHO Guideline Ratio Calculation
-  if (data.pm25) {
-    const ratio = (data.pm25 / 15).toFixed(1);
-    const whoEl = document.getElementById('whoPM25');
-    if (whoEl) whoEl.textContent = `${ratio}× WHO 24h limit (15 μg/m³)`;
+  // Dual Reference Thresholds and Exceedance Multipliers
+  // PM2.5 (CPCB 24h: 60 | WHO 24h: 15)
+  const whoPM25El = document.getElementById('whoPM25');
+  if (whoPM25El && data.pm25 != null) {
+    if (isCPCB) {
+      const cpcbRatio = (data.pm25 / 60).toFixed(1);
+      const isExceeded = data.pm25 > 60;
+      whoPM25El.textContent = isExceeded ? `${cpcbRatio}× CPCB 24h limit (60 μg/m³)` : `Within CPCB limit (60 μg/m³)`;
+      whoPM25El.className = `pol-who ${isExceeded ? 'exceeded' : 'compliant'}`;
+    } else {
+      const whoRatio = (data.pm25 / 15).toFixed(1);
+      const isExceeded = data.pm25 > 15;
+      whoPM25El.textContent = isExceeded ? `${whoRatio}× WHO 24h limit (15 μg/m³)` : `Within WHO limit (15 μg/m³)`;
+      whoPM25El.className = `pol-who ${isExceeded ? 'exceeded' : 'compliant'}`;
+    }
   }
-  if (data.pm10) {
-    const ratio = (data.pm10 / 45).toFixed(1);
-    const whoEl = document.getElementById('whoPM10');
-    if (whoEl) whoEl.textContent = `${ratio}× WHO 24h limit (45 μg/m³)`;
+
+  // PM10 (CPCB 24h: 100 | WHO 24h: 45)
+  const whoPM10El = document.getElementById('whoPM10');
+  if (whoPM10El && data.pm10 != null) {
+    if (isCPCB) {
+      const cpcbRatio = (data.pm10 / 100).toFixed(1);
+      const isExceeded = data.pm10 > 100;
+      whoPM10El.textContent = isExceeded ? `${cpcbRatio}× CPCB 24h limit (100 μg/m³)` : `Within CPCB limit (100 μg/m³)`;
+      whoPM10El.className = `pol-who ${isExceeded ? 'exceeded' : 'compliant'}`;
+    } else {
+      const whoRatio = (data.pm10 / 45).toFixed(1);
+      const isExceeded = data.pm10 > 45;
+      whoPM10El.textContent = isExceeded ? `${whoRatio}× WHO 24h limit (45 μg/m³)` : `Within WHO limit (45 μg/m³)`;
+      whoPM10El.className = `pol-who ${isExceeded ? 'exceeded' : 'compliant'}`;
+    }
+  }
+
+  // NO2 (CPCB 24h: 80 | WHO 24h: 25)
+  const no2Container = document.getElementById('dNO2')?.parentElement;
+  if (no2Container && data.no2 != null) {
+    let whoNO2El = no2Container.querySelector('.pol-who');
+    if (!whoNO2El) {
+      whoNO2El = document.createElement('span');
+      whoNO2El.className = 'pol-who';
+      no2Container.appendChild(whoNO2El);
+    }
+    if (isCPCB) {
+      const isExceeded = data.no2 > 80;
+      const ratio = (data.no2 / 80).toFixed(1);
+      whoNO2El.textContent = isExceeded ? `${ratio}× CPCB limit (80 μg/m³)` : `Within CPCB limit (80 μg/m³)`;
+      whoNO2El.className = `pol-who ${isExceeded ? 'exceeded' : 'compliant'}`;
+    } else {
+      const isExceeded = data.no2 > 25;
+      const ratio = (data.no2 / 25).toFixed(1);
+      whoNO2El.textContent = isExceeded ? `${ratio}× WHO limit (25 μg/m³)` : `Within WHO limit (25 μg/m³)`;
+      whoNO2El.className = `pol-who ${isExceeded ? 'exceeded' : 'compliant'}`;
+    }
   }
 
   // Smooth arc needle rotation
