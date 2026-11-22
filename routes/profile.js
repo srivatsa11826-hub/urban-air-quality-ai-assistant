@@ -1,9 +1,80 @@
+/**
+ * @fileoverview User Household Profile Router
+ * Stores and updates city, family vulnerability settings, commuting habits,
+ * budget preferences, and custom Gemini API keys for environmental calibration.
+ */
+
 const express = require('express');
 const { getDb } = require('../db/database');
 const auth = require('../middleware/auth');
+const {
+  DEFAULT_COUNTRY,
+  DEFAULT_FAMILY_SIZE,
+  DEFAULT_HEALTH_CONCERNS,
+  DEFAULT_TRANSPORT,
+  DEFAULT_WORK_STYLE,
+  DEFAULT_BUDGET,
+} = require('../config/constants');
 
 const router = express.Router();
 router.use(auth);
+
+/**
+ * Validates and sanitizes incoming profile payload.
+ * @param {object} body - Request body
+ * @returns {object|null} Sanitized profile parameters or null if invalid
+ */
+function sanitizeProfileInput(body) {
+  const { city, country, lat, lon, family_size, health_concerns, transport, work_style, budget, specific_concerns, gemini_api_key } = body || {};
+  const cleanCity = typeof city === 'string' ? city.trim() : '';
+  if (!cleanCity) return null;
+
+  return {
+    city: cleanCity,
+    country: country || DEFAULT_COUNTRY,
+    lat: lat || null,
+    lon: lon || null,
+    family_size: family_size || DEFAULT_FAMILY_SIZE,
+    health_concerns: health_concerns || DEFAULT_HEALTH_CONCERNS,
+    transport: transport || DEFAULT_TRANSPORT,
+    work_style: work_style || DEFAULT_WORK_STYLE,
+    budget: budget || DEFAULT_BUDGET,
+    specific_concerns: specific_concerns || null,
+    gemini_api_key: gemini_api_key || null,
+  };
+}
+
+/**
+ * Upsert sanitized profile in SQLite database.
+ * @param {DatabaseSync} db - Active database connection
+ * @param {number} userId - Active user ID
+ * @param {object} p - Sanitized profile data
+ */
+function upsertProfile(db, userId, p) {
+  db.prepare(`
+    INSERT INTO profiles
+      (user_id, city, country, lat, lon, family_size, health_concerns, transport, work_style, budget, specific_concerns, gemini_api_key, updated_at)
+    VALUES
+      (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(user_id) DO UPDATE SET
+      city = excluded.city,
+      country = excluded.country,
+      lat = excluded.lat,
+      lon = excluded.lon,
+      family_size = excluded.family_size,
+      health_concerns = excluded.health_concerns,
+      transport = excluded.transport,
+      work_style = excluded.work_style,
+      budget = excluded.budget,
+      specific_concerns = excluded.specific_concerns,
+      gemini_api_key = COALESCE(excluded.gemini_api_key, profiles.gemini_api_key),
+      updated_at = datetime('now')
+  `).run(
+    userId, p.city, p.country, p.lat, p.lon,
+    p.family_size, p.health_concerns, p.transport, p.work_style,
+    p.budget, p.specific_concerns, p.gemini_api_key
+  );
+}
 
 // GET /api/profile
 router.get('/', (req, res) => {
@@ -17,51 +88,16 @@ router.get('/', (req, res) => {
   }
 });
 
-// PUT /api/profile  (upsert)
+// PUT /api/profile
 router.put('/', (req, res) => {
   try {
-    const {
-      city, country, lat, lon,
-      family_size, health_concerns, transport, work_style,
-      budget, specific_concerns, gemini_api_key
-    } = req.body || {};
-
-    const cleanCity = typeof city === 'string' ? city.trim() : '';
-    if (!cleanCity) {
+    const sanitized = sanitizeProfileInput(req.body);
+    if (!sanitized) {
       return res.status(400).json({ error: 'City is required' });
     }
 
     const db = getDb();
-    db.prepare(`
-      INSERT INTO profiles
-        (user_id, city, country, lat, lon, family_size, health_concerns, transport, work_style, budget, specific_concerns, gemini_api_key, updated_at)
-      VALUES
-        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-      ON CONFLICT(user_id) DO UPDATE SET
-        city = excluded.city,
-        country = excluded.country,
-        lat = excluded.lat,
-        lon = excluded.lon,
-        family_size = excluded.family_size,
-        health_concerns = excluded.health_concerns,
-        transport = excluded.transport,
-        work_style = excluded.work_style,
-        budget = excluded.budget,
-        specific_concerns = excluded.specific_concerns,
-        gemini_api_key = COALESCE(excluded.gemini_api_key, profiles.gemini_api_key),
-        updated_at = datetime('now')
-    `).run(
-      req.user.id,
-      cleanCity, country || 'India', lat || null, lon || null,
-      family_size || '3-4',
-      health_concerns || 'none',
-      transport || 'car',
-      work_style || 'office',
-      budget || 'low',
-      specific_concerns || null,
-      gemini_api_key || null
-    );
-
+    upsertProfile(db, req.user.id, sanitized);
     const updated = db.prepare('SELECT * FROM profiles WHERE user_id = ?').get(req.user.id);
     res.json({ profile: updated });
   } catch (err) {

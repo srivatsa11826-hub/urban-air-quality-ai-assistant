@@ -1,18 +1,30 @@
+/**
+ * @fileoverview Authentication Router
+ * Handles user registration, JWT token generation, credential login,
+ * authenticated session verification (/me), and password changes.
+ */
+
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const { getDb } = require('../db/database');
 const auth = require('../middleware/auth');
+const { JWT_EXPIRY, BCRYPT_ROUNDS } = require('../config/constants');
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev_airguard_jwt_secret_fallback_key';
 
+/**
+ * Sign a signed JSON Web Token with claims.
+ * @param {object} user - User record
+ * @returns {string} Signed JWT token string
+ */
 function signToken(user) {
   return jwt.sign(
     { id: user.id, uuid: user.uuid, email: user.email, name: user.name },
     JWT_SECRET,
-    { expiresIn: '7d' }
+    { expiresIn: JWT_EXPIRY }
   );
 }
 
@@ -37,19 +49,13 @@ router.post('/register', async (req, res) => {
       return res.status(409).json({ error: 'Email already registered' });
     }
 
-    const hash = await bcrypt.hash(password, 12);
+    const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
     const uuid = uuidv4();
-
-    const result = db.prepare(
-      'INSERT INTO users (uuid, email, password, name) VALUES (?, ?, ?, ?)'
-    ).run(uuid, email, hash, name);
-
+    const result = db.prepare('INSERT INTO users (uuid, email, password, name) VALUES (?, ?, ?, ?)').run(uuid, email, hash, name);
     const user = { id: result.lastInsertRowid, uuid, email, name };
     const token = signToken(user);
 
-    // Update last login
     db.prepare("UPDATE users SET last_login = datetime('now') WHERE id = ?").run(user.id);
-
     res.status(201).json({ token, user: { id: user.uuid, email, name } });
   } catch (err) {
     console.error('Register error:', err);
@@ -70,29 +76,20 @@ router.post('/login', async (req, res) => {
 
     const db = getDb();
     const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
-    if (!user) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-
-    const valid = await bcrypt.compare(password, user.password);
-    if (!valid) {
+    if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     db.prepare("UPDATE users SET last_login = datetime('now') WHERE id = ?").run(user.id);
-
     const token = signToken(user);
-    res.json({
-      token,
-      user: { id: user.uuid, email: user.email, name: user.name }
-    });
+    res.json({ token, user: { id: user.uuid, email: user.email, name: user.name } });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Login failed' });
   }
 });
 
-// GET /api/auth/me  (validate token & get user)
+// GET /api/auth/me
 router.get('/me', auth, (req, res) => {
   try {
     const db = getDb();
@@ -123,15 +120,12 @@ router.post('/change-password', auth, async (req, res) => {
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
-
-    const valid = await bcrypt.compare(currentPassword, user.password);
-    if (!valid) {
+    if (!(await bcrypt.compare(currentPassword, user.password))) {
       return res.status(401).json({ error: 'Current password is incorrect' });
     }
 
-    const hash = await bcrypt.hash(newPassword, 12);
+    const hash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
     db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hash, req.user.id);
-
     res.json({ message: 'Password updated successfully' });
   } catch (err) {
     console.error('Change-password error:', err);

@@ -92,6 +92,43 @@ function toast(msg, type = 'info') {
 // ============================================================
 //  SPEECH RECOGNITION (Voice Input)
 // ============================================================
+
+/**
+ * Handle speech recognition start.
+ */
+function handleSpeechStart() {
+  isRecording = true;
+  const btn = document.getElementById('micBtn');
+  if (btn) btn.classList.add('recording');
+  toast('Listening... Speak your question now', 'info');
+}
+
+/**
+ * Handle incoming speech transcript.
+ * @param {SpeechRecognitionEvent} event
+ */
+function handleSpeechResult(event) {
+  const transcript = event.results[0][0].transcript;
+  const input = document.getElementById('chatInput');
+  if (input) {
+    input.value = (input.value ? input.value + ' ' : '') + transcript;
+    autoResize(input);
+    input.focus();
+  }
+}
+
+/**
+ * Handle speech recognition completion.
+ */
+function handleSpeechEnd() {
+  isRecording = false;
+  const btn = document.getElementById('micBtn');
+  if (btn) btn.classList.remove('recording');
+}
+
+/**
+ * Initialize Web Speech API recognizer if supported.
+ */
 function initSpeechRecognition() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) return;
@@ -101,33 +138,10 @@ function initSpeechRecognition() {
   speechRecognizer.interimResults = false;
   speechRecognizer.lang = 'en-US';
 
-  speechRecognizer.onstart = () => {
-    isRecording = true;
-    const btn = document.getElementById('micBtn');
-    if (btn) btn.classList.add('recording');
-    toast('Listening... Speak your question now', 'info');
-  };
-
-  speechRecognizer.onresult = (event) => {
-    const transcript = event.results[0][0].transcript;
-    const input = document.getElementById('chatInput');
-    if (input) {
-      input.value = (input.value ? input.value + ' ' : '') + transcript;
-      autoResize(input);
-      input.focus();
-    }
-  };
-
-  speechRecognizer.onerror = (e) => {
-    console.warn('Speech recognition error:', e.error);
-    toast('Microphone input error: ' + e.error, 'warn');
-  };
-
-  speechRecognizer.onend = () => {
-    isRecording = false;
-    const btn = document.getElementById('micBtn');
-    if (btn) btn.classList.remove('recording');
-  };
+  speechRecognizer.onstart = handleSpeechStart;
+  speechRecognizer.onresult = handleSpeechResult;
+  speechRecognizer.onerror = (e) => toast('Microphone input error: ' + e.error, 'warn');
+  speechRecognizer.onend = handleSpeechEnd;
 }
 
 function toggleSpeech() {
@@ -451,6 +465,49 @@ function renderMessages(messages) {
   document.getElementById('quickPrompts').style.display = 'none';
 }
 
+/**
+ * Append interactive action buttons to assistant message bubble.
+ * @param {HTMLElement} bubble
+ */
+function appendAssistantActions(bubble) {
+  const actions = document.createElement('div');
+  actions.className = 'msg-actions';
+  actions.innerHTML = `
+    <button class="msg-action-btn" onclick="copyMessageText(this)">Copy Text</button>
+    <button class="msg-action-btn" onclick="readAloud(this)">Listen (Audio)</button>
+    <button class="msg-action-btn" onclick="chatAbout('Explain the clinical rationale in simpler terms')">Simplify</button>
+  `;
+  bubble.appendChild(actions);
+}
+
+/**
+ * Append suggested followup question chips to assistant message bubble.
+ * @param {HTMLElement} bubble
+ * @param {string} text
+ */
+function appendFollowupChips(bubble, text) {
+  const followups = generateFollowupQuestions(text);
+  if (!followups.length) return;
+
+  const fBox = document.createElement('div');
+  fBox.className = 'followup-box';
+  followups.forEach(q => {
+    const chip = document.createElement('button');
+    chip.className = 'followup-pill';
+    chip.textContent = '→ ' + q;
+    chip.onclick = () => chatAbout(q);
+    fBox.appendChild(chip);
+  });
+  bubble.appendChild(fBox);
+}
+
+/**
+ * Append a chat message to the visual message log.
+ * @param {'user'|'assistant'} role
+ * @param {string} text
+ * @param {string|number|null} time
+ * @returns {HTMLElement} Created message element
+ */
 function appendMessage(role, text, time) {
   const container = document.getElementById('chatMessages');
   const div = document.createElement('div');
@@ -465,28 +522,8 @@ function appendMessage(role, text, time) {
   bubble.innerHTML = renderMarkdown(text);
 
   if (role === 'assistant') {
-    const actions = document.createElement('div');
-    actions.className = 'msg-actions';
-    actions.innerHTML = `
-      <button class="msg-action-btn" onclick="copyMessageText(this)">Copy Text</button>
-      <button class="msg-action-btn" onclick="readAloud(this)">Listen (Audio)</button>
-      <button class="msg-action-btn" onclick="chatAbout('Explain the clinical rationale in simpler terms')">Simplify</button>
-    `;
-    bubble.appendChild(actions);
-
-    const followups = generateFollowupQuestions(text);
-    if (followups.length > 0) {
-      const fBox = document.createElement('div');
-      fBox.className = 'followup-box';
-      followups.forEach(q => {
-        const chip = document.createElement('button');
-        chip.className = 'followup-pill';
-        chip.textContent = '→ ' + q;
-        chip.onclick = () => chatAbout(q);
-        fBox.appendChild(chip);
-      });
-      bubble.appendChild(fBox);
-    }
+    appendAssistantActions(bubble);
+    appendFollowupChips(bubble, text);
   }
 
   if (time) {
@@ -714,13 +751,14 @@ function updateHeaderBadge(data) {
   badge.style.display = 'flex';
 }
 
-function updateAQIUI(data) {
-  if (!data) return;
-
+/**
+ * Update the central AQI gauge value, category label, and risk badge.
+ * @param {object} data - AQI data
+ * @param {boolean} isCPCB - Whether CPCB mode is active
+ * @param {object} cpcbInfo - CPCB category info
+ */
+function updateAQIGaugeAndRisk(data, isCPCB, cpcbInfo) {
   document.getElementById('gaugeNum').textContent = data.aqi;
-
-  const isCPCB = currentStandard === 'cpcb';
-  const cpcbInfo = getCPCBInfo(data.aqi);
   const riskChip = document.getElementById('aqiRiskChip');
   const gaugeLabel = document.getElementById('gaugeLabel');
 
@@ -731,7 +769,6 @@ function updateAQIUI(data) {
       riskChip.className = `chip ${cpcbInfo.chipClass}`;
     }
   } else {
-    // WHO 2021 Mode
     const pm25Val = data.pm25 || 0;
     const whoRatio = parseFloat((pm25Val / 15).toFixed(1));
     gaugeLabel.textContent = whoRatio > 1 ? `${whoRatio}× WHO Limit` : 'Within WHO Limit';
@@ -751,7 +788,14 @@ function updateAQIUI(data) {
       }
     }
   }
+}
 
+/**
+ * Update location and telemetry metadata captions.
+ * @param {object} data - AQI data
+ * @param {boolean} isCPCB - Whether CPCB standard is active
+ */
+function updateMonitoringLabels(data, isCPCB) {
   const cacheSourceLabel = data.source === 'cache'
     ? '⚡ SQLite Cache (15-min TTL)'
     : data.source === 'stale-cache'
@@ -762,7 +806,6 @@ function updateAQIUI(data) {
 
   document.getElementById('aqiLocation').textContent =
     `Monitoring Station: ${data.city} · ${cacheSourceLabel} · Active Standard: ${isCPCB ? 'Indian CPCB NAQI' : 'WHO 2021 Guidelines'}`;
-
   document.getElementById('gaugeCitySubtitle').textContent = `${data.city} · ${isCPCB ? 'CPCB NAQI (0–500)' : 'WHO 2021 24h Thresholds'}`;
 
   document.getElementById('dPM25').textContent = data.pm25 ?? '–';
@@ -771,70 +814,75 @@ function updateAQIUI(data) {
   document.getElementById('dO3').textContent   = data.o3   ?? '–';
   document.getElementById('dTemp').textContent = data.temperature ?? '–';
   document.getElementById('dHum').textContent  = data.humidity   ?? '–';
+}
 
-  // Dual Reference Thresholds and Exceedance Multipliers
-  // PM2.5 (CPCB 24h: 60 | WHO 24h: 15)
+/**
+ * Update pollutant threshold badges comparing against CPCB or WHO limits.
+ * @param {object} data - Telemetry data
+ * @param {boolean} isCPCB - Whether CPCB is active
+ */
+function updatePollutantThresholdBadges(data, isCPCB) {
   const whoPM25El = document.getElementById('whoPM25');
   if (whoPM25El && data.pm25 != null) {
-    if (isCPCB) {
-      const cpcbRatio = (data.pm25 / 60).toFixed(1);
-      const isExceeded = data.pm25 > 60;
-      whoPM25El.textContent = isExceeded ? `${cpcbRatio}× CPCB 24h limit (60 μg/m³)` : `Within CPCB limit (60 μg/m³)`;
-      whoPM25El.className = `pol-who ${isExceeded ? 'exceeded' : 'compliant'}`;
-    } else {
-      const whoRatio = (data.pm25 / 15).toFixed(1);
-      const isExceeded = data.pm25 > 15;
-      whoPM25El.textContent = isExceeded ? `${whoRatio}× WHO 24h limit (15 μg/m³)` : `Within WHO limit (15 μg/m³)`;
-      whoPM25El.className = `pol-who ${isExceeded ? 'exceeded' : 'compliant'}`;
-    }
+    const limit = isCPCB ? 60 : 15;
+    const ratio = (data.pm25 / limit).toFixed(1);
+    const exceeded = data.pm25 > limit;
+    const std = isCPCB ? 'CPCB' : 'WHO';
+    whoPM25El.textContent = exceeded ? `${ratio}× ${std} 24h limit (${limit} μg/m³)` : `Within ${std} limit (${limit} μg/m³)`;
+    whoPM25El.className = `pol-who ${exceeded ? 'exceeded' : 'compliant'}`;
   }
 
-  // PM10 (CPCB 24h: 100 | WHO 24h: 45)
   const whoPM10El = document.getElementById('whoPM10');
   if (whoPM10El && data.pm10 != null) {
-    if (isCPCB) {
-      const cpcbRatio = (data.pm10 / 100).toFixed(1);
-      const isExceeded = data.pm10 > 100;
-      whoPM10El.textContent = isExceeded ? `${cpcbRatio}× CPCB 24h limit (100 μg/m³)` : `Within CPCB limit (100 μg/m³)`;
-      whoPM10El.className = `pol-who ${isExceeded ? 'exceeded' : 'compliant'}`;
-    } else {
-      const whoRatio = (data.pm10 / 45).toFixed(1);
-      const isExceeded = data.pm10 > 45;
-      whoPM10El.textContent = isExceeded ? `${whoRatio}× WHO 24h limit (45 μg/m³)` : `Within WHO limit (45 μg/m³)`;
-      whoPM10El.className = `pol-who ${isExceeded ? 'exceeded' : 'compliant'}`;
-    }
+    const limit = isCPCB ? 100 : 45;
+    const ratio = (data.pm10 / limit).toFixed(1);
+    const exceeded = data.pm10 > limit;
+    const std = isCPCB ? 'CPCB' : 'WHO';
+    whoPM10El.textContent = exceeded ? `${ratio}× ${std} 24h limit (${limit} μg/m³)` : `Within ${std} limit (${limit} μg/m³)`;
+    whoPM10El.className = `pol-who ${exceeded ? 'exceeded' : 'compliant'}`;
   }
 
-  // NO2 (CPCB 24h: 80 | WHO 24h: 25)
   const no2Container = document.getElementById('dNO2')?.parentElement;
   if (no2Container && data.no2 != null) {
-    let whoNO2El = no2Container.querySelector('.pol-who');
-    if (!whoNO2El) {
-      whoNO2El = document.createElement('span');
-      whoNO2El.className = 'pol-who';
-      no2Container.appendChild(whoNO2El);
-    }
-    if (isCPCB) {
-      const isExceeded = data.no2 > 80;
-      const ratio = (data.no2 / 80).toFixed(1);
-      whoNO2El.textContent = isExceeded ? `${ratio}× CPCB limit (80 μg/m³)` : `Within CPCB limit (80 μg/m³)`;
-      whoNO2El.className = `pol-who ${isExceeded ? 'exceeded' : 'compliant'}`;
-    } else {
-      const isExceeded = data.no2 > 25;
-      const ratio = (data.no2 / 25).toFixed(1);
-      whoNO2El.textContent = isExceeded ? `${ratio}× WHO limit (25 μg/m³)` : `Within WHO limit (25 μg/m³)`;
-      whoNO2El.className = `pol-who ${isExceeded ? 'exceeded' : 'compliant'}`;
-    }
+    let whoNO2El = no2Container.querySelector('.pol-who') || document.createElement('span');
+    whoNO2El.className = 'pol-who';
+    if (!whoNO2El.parentElement) no2Container.appendChild(whoNO2El);
+    const limit = isCPCB ? 80 : 25;
+    const ratio = (data.no2 / limit).toFixed(1);
+    const exceeded = data.no2 > limit;
+    const std = isCPCB ? 'CPCB' : 'WHO';
+    whoNO2El.textContent = exceeded ? `${ratio}× ${std} limit (${limit} μg/m³)` : `Within ${std} limit (${limit} μg/m³)`;
+    whoNO2El.className = `pol-who ${exceeded ? 'exceeded' : 'compliant'}`;
   }
+}
 
-  // Smooth arc needle rotation
-  const pct = Math.min(data.aqi / 500, 1);
+/**
+ * Animate gauge dial arc and rotation.
+ * @param {number} aqi - Numeric AQI value
+ */
+function animateGaugeNeedle(aqi) {
+  const pct = Math.min(aqi / 500, 1);
   setTimeout(() => {
     const fill = document.getElementById('gFill');
     const needle = document.getElementById('gNeedle');
     if (fill) fill.style.strokeDasharray = `${pct * 321} 321`;
     if (needle) needle.style.transform = `rotate(${-90 + pct * 180}deg)`;
   }, 100);
+}
+
+/**
+ * Master UI update orchestrator for AQI dashboard.
+ * @param {object} data - Fresh or cached AQI telemetry payload
+ */
+function updateAQIUI(data) {
+  if (!data) return;
+  const isCPCB = currentStandard === 'cpcb';
+  const cpcbInfo = getCPCBInfo(data.aqi);
+
+  updateAQIGaugeAndRisk(data, isCPCB, cpcbInfo);
+  updateMonitoringLabels(data, isCPCB);
+  updatePollutantThresholdBadges(data, isCPCB);
+  animateGaugeNeedle(data.aqi);
 }
 
 async function generateAQIInsight(data) {
@@ -963,6 +1011,49 @@ async function toggleCheckItem(idx) {
 // ============================================================
 //  ROOM-BY-ROOM AIR INSPECTION ENGINE
 // ============================================================
+
+/**
+ * Returns baseline room air audit profiles for indoor microenvironments.
+ * @returns {Array<object>} Room inspection profiles
+ */
+function getDefaultRoomAudit() {
+  return [
+    {
+      room: 'Living Room', icon: '🛋️', threatLevel: 'Moderate',
+      threats: ['Outdoor particulate entry from main doorway', 'VOC emissions from synthetic upholstery and carpet pile'],
+      hacks: ['Install a high-density silicone door bottom draft seal (₹300)', 'Maintain a Snake Plant (Sansevieria) near television unit for VOC capture', 'Use damp microfiber mopping instead of dry broom sweeping'],
+      pmReduction: '-45% Inhaled PM2.5'
+    },
+    {
+      room: 'Kitchen', icon: '🍳', threatLevel: 'Severe',
+      threats: ['Combustion nitrogen dioxide (NO2) and carbon monoxide from LPG burners', 'Aerosolized cooking oil particulates reaching 400+ μg/m³ during frying'],
+      hacks: ['Seal interior kitchen door during cooking with exhaust on high', 'Cook on single-burner induction plate (eliminates indoor NO2 completely)', 'Boil with tight-fitting lids to minimize volatile steam plumes'],
+      pmReduction: '-65% Toxic VOCs & NO2'
+    },
+    {
+      room: 'Master Bedroom', icon: '🛏️', threatLevel: 'Moderate',
+      threats: ['CO2 accumulation (>1200 ppm) with closed windows overnight', 'Dust mite accumulation in heavy winter blankets and curtains'],
+      hacks: ['Position air cleaner 3 feet from headboard at Whisper/Sleep mode', 'Wash bed linens in 60°C water weekly to neutralize mite allergens', 'Ventilate for 15 minutes strictly between 1:00 PM and 3:00 PM'],
+      pmReduction: '-55% Nighttime Inhalation'
+    },
+    {
+      room: "Children's Room", icon: '🧸', threatLevel: 'High',
+      threats: ['Higher inhalation rate per kg body weight in developing lungs', 'Soft plush toy particulate reservoirs'],
+      hacks: ['Install a MERV-13 pre-filter sheet over bedroom window intakes (₹450)', 'Store plush toys in closed washable bins', 'Eliminate all aerosol air fresheners, incense sticks, and dhoop'],
+      pmReduction: '-70% Pediatric Exposure'
+    },
+    {
+      room: 'Home Office / Study', icon: '💻', threatLevel: 'Low',
+      threats: ['Elevated indoor CO2 causing lethargy and mild headache', 'Laser printer ozone and electrostatically-charged dust'],
+      hacks: ['Desk Spider Plant (Chlorophytum) for formaldehyde absorption', 'Operate ceiling fan on lowest reverse speed to prevent stagnant thermal pockets', 'Take 5-minute movement breaks near indoor air cleaner'],
+      pmReduction: '-40% Fatigue Contaminants'
+    }
+  ];
+}
+
+/**
+ * Fetch room-by-room air inspection data from server or load default profile.
+ */
 async function loadRoomAudit() {
   const container = document.getElementById('roomAuditContent');
   if (!container) return;
@@ -970,44 +1061,16 @@ async function loadRoomAudit() {
   try {
     const res = await api.generate('room_audit');
     roomAuditData = res.data || [];
-    renderRoomAudit();
   } catch (e) {
-    roomAuditData = [
-      {
-        room: 'Living Room', icon: '🛋️', threatLevel: 'Moderate',
-        threats: ['Outdoor particulate entry from main doorway', 'VOC emissions from synthetic upholstery and carpet pile'],
-        hacks: ['Install a high-density silicone door bottom draft seal (₹300)', 'Maintain a Snake Plant (Sansevieria) near television unit for VOC capture', 'Use damp microfiber mopping instead of dry broom sweeping'],
-        pmReduction: '-45% Inhaled PM2.5'
-      },
-      {
-        room: 'Kitchen', icon: '🍳', threatLevel: 'Severe',
-        threats: ['Combustion nitrogen dioxide (NO2) and carbon monoxide from LPG burners', 'Aerosolized cooking oil particulates reaching 400+ μg/m³ during frying'],
-        hacks: ['Seal interior kitchen door during cooking with exhaust on high', 'Cook on single-burner induction plate (eliminates indoor NO2 completely)', 'Boil with tight-fitting lids to minimize volatile steam plumes'],
-        pmReduction: '-65% Toxic VOCs & NO2'
-      },
-      {
-        room: 'Master Bedroom', icon: '🛏️', threatLevel: 'Moderate',
-        threats: ['CO2 accumulation (>1200 ppm) with closed windows overnight', 'Dust mite accumulation in heavy winter blankets and curtains'],
-        hacks: ['Position air cleaner 3 feet from headboard at Whisper/Sleep mode', 'Wash bed linens in 60°C water weekly to neutralize mite allergens', 'Ventilate for 15 minutes strictly between 1:00 PM and 3:00 PM'],
-        pmReduction: '-55% Nighttime Inhalation'
-      },
-      {
-        room: "Children's Room", icon: '🧸', threatLevel: 'High',
-        threats: ['Higher inhalation rate per kg body weight in developing lungs', 'Soft plush toy particulate reservoirs'],
-        hacks: ['Install a MERV-13 pre-filter sheet over bedroom window intakes (₹450)', 'Store plush toys in closed washable bins', 'Eliminate all aerosol air fresheners, incense sticks, and dhoop'],
-        pmReduction: '-70% Pediatric Exposure'
-      },
-      {
-        room: 'Home Office / Study', icon: '💻', threatLevel: 'Low',
-        threats: ['Elevated indoor CO2 causing lethargy and mild headache', 'Laser printer ozone and electrostatically-charged dust'],
-        hacks: ['Desk Spider Plant (Chlorophytum) for formaldehyde absorption', 'Operate ceiling fan on lowest reverse speed to prevent stagnant thermal pockets', 'Take 5-minute movement breaks near indoor air cleaner'],
-        pmReduction: '-40% Fatigue Contaminants'
-      }
-    ];
-    renderRoomAudit();
+    roomAuditData = getDefaultRoomAudit();
   }
+  renderRoomAudit();
 }
 
+/**
+ * Switch active room tab in microenvironment audit.
+ * @param {number} idx - Index of selected room
+ */
 function switchRoom(idx) {
   currentRoomIdx = idx;
   document.querySelectorAll('.room-tab').forEach((t, i) => {
@@ -1016,14 +1079,36 @@ function switchRoom(idx) {
   renderRoomAudit();
 }
 
-function renderRoomAudit() {
-  const container = document.getElementById('roomAuditContent');
-  if (!container || !roomAuditData.length) return;
+/**
+ * Render HTML for contaminant sources list.
+ * @param {Array<string>} threats
+ * @returns {string} HTML string
+ */
+function renderThreatsListHtml(threats) {
+  return (threats || []).map(t =>
+    `<li style="font-size:.86rem;color:var(--text-body);display:flex;gap:.5rem"><span style="color:var(--aqi-severe)">•</span> ${escHtml(t)}</li>`
+  ).join('');
+}
 
-  const room = roomAuditData[currentRoomIdx] || roomAuditData[0];
-  const threatClass = room.threatLevel === 'Severe' ? 'severe' : room.threatLevel === 'High' ? 'unhealthy' : 'mod';
+/**
+ * Render HTML for recommended room hacks list.
+ * @param {Array<string>} hacks
+ * @returns {string} HTML string
+ */
+function renderHacksListHtml(hacks) {
+  return (hacks || []).map(h =>
+    `<li style="font-size:.86rem;color:var(--text-body);display:flex;gap:.5rem"><span style="color:var(--aqi-good);font-weight:700">✓</span> ${escHtml(h)}</li>`
+  ).join('');
+}
 
-  container.innerHTML = `
+/**
+ * Render room header and threat level chip.
+ * @param {object} room - Room object
+ * @param {string} threatClass - CSS class for threat level
+ * @returns {string} HTML string
+ */
+function buildRoomHeaderHtml(room, threatClass) {
+  return `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem">
       <div style="display:flex;align-items:center;gap:.8rem">
         <span style="font-size:2rem;line-height:1">${room.icon || '🏠'}</span>
@@ -1037,24 +1122,30 @@ function renderRoomAudit() {
         <span class="chip good">${room.pmReduction || '-50% PM2.5'}</span>
       </div>
     </div>
+  `;
+}
 
+/**
+ * Render active room microenvironment audit details.
+ */
+function renderRoomAudit() {
+  const container = document.getElementById('roomAuditContent');
+  if (!container || !roomAuditData.length) return;
+
+  const room = roomAuditData[currentRoomIdx] || roomAuditData[0];
+  const threatClass = room.threatLevel === 'Severe' ? 'severe' : room.threatLevel === 'High' ? 'unhealthy' : 'mod';
+
+  container.innerHTML = `
+    ${buildRoomHeaderHtml(room, threatClass)}
     <div style="display:grid;grid-template-columns:1fr 1.3fr;gap:1.5rem">
       <div style="background:#fff;border:1px solid #fee2e2;border-radius:var(--r-md);padding:1.3rem">
-        <h4 style="color:var(--aqi-severe);font-size:.9rem;font-weight:700;margin-bottom:.8rem">
-          Identified Contaminant Sources
-        </h4>
-        <ul style="list-style:none;display:flex;flex-direction:column;gap:.6rem">
-          ${(room.threats || []).map(t => `<li style="font-size:.86rem;color:var(--text-body);display:flex;gap:.5rem"><span style="color:var(--aqi-severe)">•</span> ${escHtml(t)}</li>`).join('')}
-        </ul>
+        <h4 style="color:var(--aqi-severe);font-size:.9rem;font-weight:700;margin-bottom:.8rem">Identified Contaminant Sources</h4>
+        <ul style="list-style:none;display:flex;flex-direction:column;gap:.6rem">${renderThreatsListHtml(room.threats)}</ul>
       </div>
 
       <div style="background:#fff;border:1px solid #bbf7d0;border-radius:var(--r-md);padding:1.3rem">
-        <h4 style="color:var(--aqi-good);font-size:.9rem;font-weight:700;margin-bottom:.8rem">
-          Recommended Mitigations
-        </h4>
-        <ul style="list-style:none;display:flex;flex-direction:column;gap:.65rem">
-          ${(room.hacks || []).map(h => `<li style="font-size:.86rem;color:var(--text-body);display:flex;gap:.5rem"><span style="color:var(--aqi-good);font-weight:700">✓</span> ${escHtml(h)}</li>`).join('')}
-        </ul>
+        <h4 style="color:var(--aqi-good);font-size:.9rem;font-weight:700;margin-bottom:.8rem">Recommended Mitigations</h4>
+        <ul style="list-style:none;display:flex;flex-direction:column;gap:.65rem">${renderHacksListHtml(room.hacks)}</ul>
       </div>
     </div>
 
@@ -1069,6 +1160,39 @@ function renderRoomAudit() {
 // ============================================================
 //  SUSTAINABLE ALTERNATIVES ENGINE
 // ============================================================
+
+/**
+ * Returns baseline sustainable alternative swaps.
+ * @returns {Array<object>} Default swap suggestions
+ */
+function getDefaultAlternatives() {
+  return [
+    {
+      category: 'Food', difficulty: 'Easy', monthlySaving: '₹600 / mo',
+      badOption: { name: 'Cooking Entire Meals on LPG Gas Stove', description: 'Releases nitrogen dioxide (NO2), carbon monoxide, and sub-micron combustion soot inside the living space.', emission: '3.4 kg CO2 / week', healthRisk: '40% higher asthma risk in children' },
+      goodOption: { name: 'Single Induction Cooktop for Boiling & Curries', description: 'Zero direct indoor combustion emissions; converts 84% of electrical energy directly to cooking vessel heat.', saving: 'Saves 2.8 kg CO2/wk + 100% reduction in indoor NO2' }
+    },
+    {
+      category: 'Transport', difficulty: 'Medium', monthlySaving: '₹3,200 / mo',
+      badOption: { name: 'Solo Petrol Sedan Commute in Traffic Congestion', description: 'Directly follows tailpipe plumes in bumper-to-bumper city congestion; high idle emissions.', emission: '18.2 kg CO2 / week', healthRisk: 'High inhalation of polycyclic aromatic hydrocarbons' },
+      goodOption: { name: 'Metro Rail + Walking with Fitted N95 Respirator', description: 'High-capacity electric rapid transit; avoids street-level exhaust exposure during peak smog hours.', saving: 'Prevents 15.4 kg CO2/wk + 85% reduced inhalation' }
+    },
+    {
+      category: 'Lifestyle', difficulty: 'Easy', monthlySaving: '₹400 / mo',
+      badOption: { name: 'Burning Incense Sticks (Agarbatti) & Scented Candles', description: 'Produces intense particulate spikes exceeding 500 μg/m³ PM2.5 in closed rooms along with benzene and toluene.', emission: '0.9 kg VOC aerosols / mo', healthRisk: 'Deep alveolar inflammation equivalent to secondhand smoke' },
+      goodOption: { name: 'Water-Based Ultrasonic Diffuser / Cinnamon Simmer Pot', description: 'Natural citrus peels and cinnamon boiled in water on induction; zero carcinogenic soot.', saving: '100% elimination of indoor chemical soot' }
+    },
+    {
+      category: 'Home', difficulty: 'Easy', monthlySaving: '₹1,500 / mo',
+      badOption: { name: 'Unsealed Exterior Window Drafts in Winter', description: 'Infiltration of toxic outdoor smog into bedrooms overnight through window sill gaps.', emission: 'High thermal heat loss', healthRisk: 'Continuous 8-hour sleep exposure to winter smog' },
+      goodOption: { name: 'Silicone Weatherstrip Tape on Window Frames (₹250)', description: 'Stops micro-draft infiltration by 90% while retaining indoor air purifier efficacy.', saving: 'Cuts overnight indoor PM2.5 by 50%' }
+    }
+  ];
+}
+
+/**
+ * Fetch sustainable swaps from server or load defaults.
+ */
 async function loadAlternatives() {
   const container = document.getElementById('alternativesContent');
   if (!container) return;
@@ -1076,34 +1200,17 @@ async function loadAlternatives() {
   try {
     const res = await api.generate('alternatives');
     alternativesData = res.data || [];
-    renderAlternatives(alternativesData);
   } catch (e) {
-    alternativesData = [
-      {
-        category: 'Food', difficulty: 'Easy', monthlySaving: '₹600 / mo',
-        badOption: { name: 'Cooking Entire Meals on LPG Gas Stove', description: 'Releases nitrogen dioxide (NO2), carbon monoxide, and sub-micron combustion soot inside the living space.', emission: '3.4 kg CO2 / week', healthRisk: '40% higher asthma risk in children' },
-        goodOption: { name: 'Single Induction Cooktop for Boiling & Curries', description: 'Zero direct indoor combustion emissions; converts 84% of electrical energy directly to cooking vessel heat.', saving: 'Saves 2.8 kg CO2/wk + 100% reduction in indoor NO2' }
-      },
-      {
-        category: 'Transport', difficulty: 'Medium', monthlySaving: '₹3,200 / mo',
-        badOption: { name: 'Solo Petrol Sedan Commute in Traffic Congestion', description: 'Directly follows tailpipe plumes in bumper-to-bumper city congestion; high idle emissions.', emission: '18.2 kg CO2 / week', healthRisk: 'High inhalation of polycyclic aromatic hydrocarbons' },
-        goodOption: { name: 'Metro Rail + Walking with Fitted N95 Respirator', description: 'High-capacity electric rapid transit; avoids street-level exhaust exposure during peak smog hours.', saving: 'Prevents 15.4 kg CO2/wk + 85% reduced inhalation' }
-      },
-      {
-        category: 'Lifestyle', difficulty: 'Easy', monthlySaving: '₹400 / mo',
-        badOption: { name: 'Burning Incense Sticks (Agarbatti) & Scented Candles', description: 'Produces intense particulate spikes exceeding 500 μg/m³ PM2.5 in closed rooms along with benzene and toluene.', emission: '0.9 kg VOC aerosols / mo', healthRisk: 'Deep alveolar inflammation equivalent to secondhand smoke' },
-        goodOption: { name: 'Water-Based Ultrasonic Diffuser / Cinnamon Simmer Pot', description: 'Natural citrus peels and cinnamon boiled in water on induction; zero carcinogenic soot.', saving: '100% elimination of indoor chemical soot' }
-      },
-      {
-        category: 'Home', difficulty: 'Easy', monthlySaving: '₹1,500 / mo',
-        badOption: { name: 'Unsealed Exterior Window Drafts in Winter', description: 'Infiltration of toxic outdoor smog into bedrooms overnight through window sill gaps.', emission: 'High thermal heat loss', healthRisk: 'Continuous 8-hour sleep exposure to winter smog' },
-        goodOption: { name: 'Silicone Weatherstrip Tape on Window Frames (₹250)', description: 'Stops micro-draft infiltration by 90% while retaining indoor air purifier efficacy.', saving: 'Cuts overnight indoor PM2.5 by 50%' }
-      }
-    ];
-    renderAlternatives(alternativesData);
+    alternativesData = getDefaultAlternatives();
   }
+  renderAlternatives(alternativesData);
 }
 
+/**
+ * Filter alternatives list by category.
+ * @param {string} category - Category filter name
+ * @param {HTMLElement|null} btn - Clicked filter button
+ */
 function filterAlternatives(category, btn) {
   document.querySelectorAll('.alt-filter-btn').forEach(b => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
@@ -1116,11 +1223,46 @@ function filterAlternatives(category, btn) {
   }
 }
 
-function renderAlternatives(list) {
-  const container = document.getElementById('alternativesContent');
-  if (!container) return;
+/**
+ * Render current habit card side.
+ * @param {object} bad - Bad option descriptor
+ * @returns {string} HTML string
+ */
+function buildBadOptionHtml(bad) {
+  return `
+    <div class="alt-side current">
+      <div class="alt-side-tag">Current Habit</div>
+      <div style="font-weight:700;font-size:.95rem;color:var(--text-main);margin-bottom:.3rem">${escHtml(bad?.name || '')}</div>
+      <p style="font-size:.83rem;color:var(--text-muted);line-height:1.4">${escHtml(bad?.description || '')}</p>
+      <div style="margin-top:.8rem;font-size:.8rem;color:var(--aqi-unhealthy);font-weight:600">Carbon: ${escHtml(bad?.emission || '')}</div>
+      <div style="font-size:.78rem;color:var(--aqi-severe);margin-top:.2rem">Risk: ${escHtml(bad?.healthRisk || '')}</div>
+    </div>
+  `;
+}
 
-  container.innerHTML = list.map(a => `
+/**
+ * Render clean alternative card side.
+ * @param {object} good - Good option descriptor
+ * @returns {string} HTML string
+ */
+function buildGoodOptionHtml(good) {
+  return `
+    <div class="alt-side green">
+      <div class="alt-side-tag">Clean Alternative</div>
+      <div style="font-weight:700;font-size:.95rem;color:var(--aqi-good);margin-bottom:.3rem">${escHtml(good?.name || '')}</div>
+      <p style="font-size:.83rem;color:var(--text-body);line-height:1.4">${escHtml(good?.description || '')}</p>
+      <div style="margin-top:.8rem;font-size:.82rem;font-weight:700;color:var(--aqi-good)">Direct Gain: ${escHtml(good?.saving || '')}</div>
+    </div>
+  `;
+}
+
+/**
+ * Build HTML string for a single sustainable swap comparison card.
+ * @param {object} a - Swap item object
+ * @returns {string} HTML string
+ */
+function buildAlternativeCardHtml(a) {
+  return `
     <div class="alt-card-modern">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.8rem">
         <div style="display:flex;align-items:center;gap:.6rem">
@@ -1131,24 +1273,11 @@ function renderAlternatives(list) {
       </div>
 
       <div class="alt-compare-grid">
-        <div class="alt-side current">
-          <div class="alt-side-tag">Current Habit</div>
-          <div style="font-weight:700;font-size:.95rem;color:var(--text-main);margin-bottom:.3rem">${escHtml(a.badOption?.name || '')}</div>
-          <p style="font-size:.83rem;color:var(--text-muted);line-height:1.4">${escHtml(a.badOption?.description || '')}</p>
-          <div style="margin-top:.8rem;font-size:.8rem;color:var(--aqi-unhealthy);font-weight:600">Carbon: ${escHtml(a.badOption?.emission || '')}</div>
-          <div style="font-size:.78rem;color:var(--aqi-severe);margin-top:.2rem">Risk: ${escHtml(a.badOption?.healthRisk || '')}</div>
-        </div>
-
+        ${buildBadOptionHtml(a.badOption)}
         <div style="text-align:center" class="alt-vs-badge">
           <span style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:50%;width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;color:#475569;font-weight:700;font-size:.8rem">→</span>
         </div>
-
-        <div class="alt-side green">
-          <div class="alt-side-tag">Clean Alternative</div>
-          <div style="font-weight:700;font-size:.95rem;color:var(--aqi-good);margin-bottom:.3rem">${escHtml(a.goodOption?.name || '')}</div>
-          <p style="font-size:.83rem;color:var(--text-body);line-height:1.4">${escHtml(a.goodOption?.description || '')}</p>
-          <div style="margin-top:.8rem;font-size:.82rem;font-weight:700;color:var(--aqi-good)">Direct Gain: ${escHtml(a.goodOption?.saving || '')}</div>
-        </div>
+        ${buildGoodOptionHtml(a.goodOption)}
       </div>
 
       <div style="margin-top:1.2rem;display:flex;justify-content:flex-end">
@@ -1157,7 +1286,17 @@ function renderAlternatives(list) {
         </button>
       </div>
     </div>
-  `).join('');
+  `;
+}
+
+/**
+ * Render list of sustainable alternative cards.
+ * @param {Array<object>} list
+ */
+function renderAlternatives(list) {
+  const container = document.getElementById('alternativesContent');
+  if (!container) return;
+  container.innerHTML = list.map(buildAlternativeCardHtml).join('');
 }
 
 async function adoptSwap(swapName, category) {
@@ -1272,16 +1411,57 @@ async function loadProfileStats() {
 // ============================================================
 //  PRINTABLE FAMILY CLEAN AIR BLUEPRINT EXPORT
 // ============================================================
-function exportSafetyPlan() {
-  const printWindow = window.open('', '_blank');
-  const city = profile?.city || 'Local Urban Area';
-  const aqi = aqiData?.aqi || '–';
-  const cat = aqiData?.category?.label || 'Elevated Smog';
+/**
+ * Generates the interior card grids for the printable Clean Air Plan.
+ * @returns {string} HTML string
+ */
+function buildPrintableCardsHtml() {
+  return `
+    <div class="grid">
+      <div class="card">
+        <h3>Daily Smog Exposure Safeguards</h3>
+        <ul>
+          <li><strong>Morning (6 AM - 10 AM):</strong> Keep windows sealed; avoid early morning outdoor jogging.</li>
+          <li><strong>Ventilation Window:</strong> Open windows strictly between 12:30 PM – 3:30 PM.</li>
+          <li><strong>Commute:</strong> N95 respirator fitted closely; vehicle cabin AC set to internal recirculation.</li>
+        </ul>
+      </div>
 
-  printWindow.document.write(`
+      <div class="card">
+        <h3>Indoor Air Quality Standards</h3>
+        <ul>
+          <li><strong>Kitchen:</strong> Door shut during cooking; high exhaust; favor induction over open gas.</li>
+          <li><strong>Bedrooms:</strong> Air purifier operating on quiet mode near head of bed.</li>
+          <li><strong>Cleaning:</strong> Wet microfiber cloth only — eliminate dry broom dust aerosolization.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Sustainable Daily Commitments</h3>
+      <ul>
+        <li>Switching high-heat boiling tasks to portable induction plate.</li>
+        <li>Eliminating indoor incense sticks and chemical room aerosols.</li>
+        <li>Silicone weatherstrip tape applied to exterior window drafts.</li>
+      </ul>
+    </div>
+  `;
+}
+
+/**
+ * Builds the complete standalone HTML blueprint document for printing.
+ * @param {string} city - Target city
+ * @param {number|string} aqi - Active AQI value
+ * @param {string} cat - Severity category
+ * @param {object} prof - Household profile
+ * @returns {string} Complete HTML document string
+ */
+function buildPrintableBlueprintHtml(city, aqi, cat, prof) {
+  return `
     <!DOCTYPE html>
-    <html>
+    <html lang="en">
     <head>
+      <meta charset="UTF-8"/>
       <title>AirGuard - Household Clean Air Plan - ${city}</title>
       <style>
         body { font-family: 'Segoe UI', system-ui, sans-serif; line-height: 1.6; color: #1e293b; padding: 2.5rem; max-width: 800px; margin: 0 auto; }
@@ -1300,44 +1480,27 @@ function exportSafetyPlan() {
       <div class="meta-box">
         <strong>City:</strong> ${city} | <strong>Current Air Status:</strong> AQI ${aqi} (${cat}) | <strong>Date:</strong> ${new Date().toLocaleDateString()}
         <br/>
-        <strong>Vulnerability Focus:</strong> ${profile?.health_concerns || 'General Protection'} | <strong>Household:</strong> ${profile?.family_size || '3-4'} members
+        <strong>Vulnerability Focus:</strong> ${prof?.health_concerns || 'General Protection'} | <strong>Household:</strong> ${prof?.family_size || '3-4'} members
       </div>
-
-      <div class="grid">
-        <div class="card">
-          <h3>Daily Smog Exposure Safeguards</h3>
-          <ul>
-            <li><strong>Morning (6 AM - 10 AM):</strong> Keep windows sealed; avoid early morning outdoor jogging.</li>
-            <li><strong>Ventilation Window:</strong> Open windows strictly between 12:30 PM – 3:30 PM.</li>
-            <li><strong>Commute:</strong> N95 respirator fitted closely; vehicle cabin AC set to internal recirculation.</li>
-          </ul>
-        </div>
-
-        <div class="card">
-          <h3>Indoor Air Quality Standards</h3>
-          <ul>
-            <li><strong>Kitchen:</strong> Door shut during cooking; high exhaust; favor induction over open gas.</li>
-            <li><strong>Bedrooms:</strong> Air purifier operating on quiet mode near head of bed.</li>
-            <li><strong>Cleaning:</strong> Wet microfiber cloth only — eliminate dry broom dust aerosolization.</li>
-          </ul>
-        </div>
-      </div>
-
-      <div class="card">
-        <h3>Sustainable Daily Commitments</h3>
-        <ul>
-          <li>Switching high-heat boiling tasks to portable induction plate.</li>
-          <li>Eliminating indoor incense sticks and chemical room aerosols.</li>
-          <li>Silicone weatherstrip tape applied to exterior window drafts.</li>
-        </ul>
-      </div>
-
+      ${buildPrintableCardsHtml()}
       <div class="footer">
         AirGuard Urban Air Quality & Respiratory Protection Platform. Keep this reference accessible in your home.
       </div>
     </body>
     </html>
-  `);
+  `;
+}
+
+/**
+ * Open a formatted printable Clean Air Blueprint in a pop-up window.
+ */
+function exportSafetyPlan() {
+  const printWindow = window.open('', '_blank');
+  const city = profile?.city || 'Local Urban Area';
+  const aqi = aqiData?.aqi || '–';
+  const cat = aqiData?.category?.label || 'Elevated Smog';
+
+  printWindow.document.write(buildPrintableBlueprintHtml(city, aqi, cat, profile));
   printWindow.document.close();
   printWindow.focus();
   setTimeout(() => { printWindow.print(); }, 500);
